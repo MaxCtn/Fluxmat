@@ -127,8 +127,8 @@ graph TB
 
 ```bash
 # Cloner le repository
-git clone https://github.com/votre-username/fluxmat.git
-cd fluxmat
+git clone https://github.com/MaxCtn/Fluxmat.git
+cd Fluxmat
 
 # Installer les dépendances du frontend
 cd fluxmat
@@ -298,8 +298,8 @@ Nous accueillons les contributions ! Voici comment participer :
 ### 🍴 Fork et Clone
 
 ```bash
-git clone https://github.com/votre-username/fluxmat.git
-cd fluxmat
+git clone https://github.com/MaxCtn/Fluxmat.git
+cd Fluxmat
 ```
 
 ### 🌿 Créer une branche
@@ -334,6 +334,6 @@ Ce projet est sous licence MIT. Voir le fichier [LICENSE](LICENSE) pour plus de 
 
 **Fait avec ❤️ pour un monde plus vert**
 
-[🌐 Site Web](https://fluxmat.com) • [📧 Contact](mailto:contact@fluxmat.com) • [🐛 Issues](https://github.com/votre-username/fluxmat/issues)
+[🌐 Site Web](https://fluxmat.com) • [📧 Contact](mailto:contact@fluxmat.com) • [🐛 Issues](https://github.com/MaxCtn/Fluxmat/issues)
 
 </div>
