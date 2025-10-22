@@ -246,3 +246,9 @@ temp/
 
 # Supabase
 .supabase
+
+# Archive files
+*.zip
+*.tar.gz
+*.rar
+*.7z
