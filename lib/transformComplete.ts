@@ -317,7 +317,7 @@ export function transform(rows: Depense[]): TransformResult {
     if (ced) { registre.push(base); }
     else {
       const suggestion = suggestFromKeywords(label);
-      const raw = { ...row, suggestionCodeDechet: suggestion, __id: `c${rowId++}` };
+      const raw: any = { ...row, suggestionCodeDechet: suggestion, __id: `c${rowId++}` };
       raw["dateExpedition"]=base.dateExpedition; raw["denominationUsuelle"]=base.denominationUsuelle;
       raw["quantite"]=base.quantite; raw["codeUnite"]=base.codeUnite;
       raw["producteur.raisonSociale"]=base["producteur.raisonSociale"];
