@@ -36,7 +36,7 @@ export default function Page(){
   }
 
   async function saveToDB(){
-    const res = await fetch('/api/db/save-legacy', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ rows: registre }) });
+    const res = await fetch('/api/db/save-simple', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ rows: registre }) });
     const data = await res.json();
     if (data.error) {
       alert(`Erreur: ${data.error}`);

@@ -12,9 +12,9 @@ export default function DBActive(){
 
   async function load(){
     setLoading(true); setError(undefined);
-    const res = await fetch('/api/db/summary');
+    const res = await fetch('/api/db/summary-simple');
     const data = await res.json();
-    if (res.ok) setItems(data.items || []); else setError(data.error || 'Erreur');
+    if (res.ok) setItems(data || []); else setError(data.error || 'Erreur');
     setLoading(false);
   }
   useEffect(()=>{ load(); }, []);
