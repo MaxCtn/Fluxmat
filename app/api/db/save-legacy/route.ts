@@ -4,12 +4,25 @@ import { getSupabaseServer } from '../../../../lib/supabaseServer';
 export const runtime = "nodejs";
 
 export async function POST(req: NextRequest){
+  console.log('[SAVE-LEGACY] Début de la requête');
+  
   const supabase = getSupabaseServer();
-  if (!supabase) return NextResponse.json({ error: "Supabase non configuré" }, { status: 200 });
+  if (!supabase) {
+    console.error('[SAVE-LEGACY] Supabase non configuré');
+    return NextResponse.json({ error: "Supabase non configuré" }, { status: 500 });
+  }
 
-  const body = await req.json().catch(()=> ({}));
+  console.log('[SAVE-LEGACY] Supabase configuré, traitement du body...');
+
+  const body = await req.json().catch((e) => {
+    console.error('[SAVE-LEGACY] Erreur parsing JSON:', e);
+    return {};
+  });
   const rows = body?.rows as any[] || [];
-  if (!rows.length) return NextResponse.json({ ok: true, inserted: 0 });
+  if (!rows.length) {
+    console.log('[SAVE-LEGACY] Aucune ligne à traiter');
+    return NextResponse.json({ ok: true, inserted: 0 });
+  }
 
   console.log(`[SAVE-LEGACY] Reçu ${rows.length} lignes à sauvegarder`);
   console.log(`[SAVE-LEGACY] Première ligne exemple:`, JSON.stringify(rows[0], null, 2));
@@ -133,21 +146,31 @@ export async function POST(req: NextRequest){
     return NextResponse.json({ ok: true, inserted: 0, duplicates: payload.length });
   }
 
-  const { error } = await supabase.from('depenses_completes').insert(finalPayload);
+  console.log(`[SAVE-LEGACY] Tentative d'insertion de ${finalPayload.length} lignes...`);
   
-  if (error) {
-    console.error(`[SAVE-LEGACY] Erreur Supabase:`, error);
+  try {
+    const { data, error } = await supabase.from('depenses_completes').insert(finalPayload);
+    
+    if (error) {
+      console.error(`[SAVE-LEGACY] Erreur Supabase:`, error);
+      return NextResponse.json({ 
+        error: error.message, 
+        code: error.code,
+        details: error.details 
+      }, { status: 500 });
+    }
+
+    console.log(`[SAVE-LEGACY] Succès: ${finalPayload.length} lignes insérées`);
     return NextResponse.json({ 
-      error: error.message, 
-      code: error.code,
-      details: error.details 
+      ok: true, 
+      inserted: finalPayload.length, 
+      duplicates: payload.length - finalPayload.length 
+    });
+  } catch (insertError) {
+    console.error(`[SAVE-LEGACY] Erreur lors de l'insertion:`, insertError);
+    return NextResponse.json({ 
+      error: `Erreur d'insertion: ${insertError}`,
+      type: 'insertion_error'
     }, { status: 500 });
   }
-
-  console.log(`[SAVE-LEGACY] Succès: ${finalPayload.length} lignes insérées`);
-  return NextResponse.json({ 
-    ok: true, 
-    inserted: finalPayload.length, 
-    duplicates: payload.length - finalPayload.length 
-  });
 }
