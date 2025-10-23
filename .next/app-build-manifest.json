@@ -1,0 +1,9 @@
+{
+  "pages": {
+    "/api/db/save-legacy/route": [
+      "static/chunks/webpack.js",
+      "static/chunks/main-app.js",
+      "static/chunks/app/api/db/save-legacy/route.js"
+    ]
+  }
+}
