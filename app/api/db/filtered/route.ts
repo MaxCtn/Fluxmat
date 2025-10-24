@@ -9,9 +9,9 @@ export async function GET(request: Request) {
     
     // Paramètres de filtre
     const exutoire = searchParams.get('exutoire');
-    const natureGestion = searchParams.getAll('nature_gestion'); // Peut être multiple
-    const ressource = searchParams.getAll('ressource'); // Peut être multiple
-    const brut = searchParams.get('brut') === 'true'; // Si true, utilise depenses_brutes
+    const natureGestion = searchParams.getAll('nature_gestion');
+    const ressource = searchParams.getAll('ressource');
+    const brut = searchParams.get('brut') === 'true';
     
     console.log('[API/DB/FILTERED] Filtres:', { exutoire, natureGestion, ressource, brut });
     
@@ -23,30 +23,35 @@ export async function GET(request: Request) {
       );
     }
 
-    // Choisir la table (brute ou complète)
     const table = brut ? 'depenses_brutes' : 'depenses_completes';
     
     let query = supabase.from(table).select('*');
     
-    // Filtre 1 : Exutoire (Libellé Fournisseur)
     if (exutoire) {
       query = query.eq('libelle_fournisseur', exutoire);
     }
     
-    // Filtre 2 : Libellé Nature Gestion (peut être multiple)
     if (natureGestion && natureGestion.length > 0) {
       query = query.in('libelle_nature_gestion', natureGestion);
     }
     
-    // Filtre 3 : Libellé Ressource (peut être multiple)
     if (ressource && ressource.length > 0) {
       query = query.in('libelle_ressource', ressource);
     }
     
-    const { data, error } = await query.order('created_at', { ascending: false });
+    const { data, error } = await query.order('created_at', { ascending: false }).limit(1000);
 
     if (error) {
       console.error('[API/DB/FILTERED] Erreur Supabase:', error);
+      // Si la table n'existe pas, retourner des données vides au lieu d'erreur
+      if (error.message?.includes('relation') || error.message?.includes('does not exist')) {
+        return NextResponse.json({ 
+          data: [],
+          count: 0,
+          filters: { exutoire, natureGestion, ressource, brut },
+          warning: `Table ${table} not yet populated`
+        });
+      }
       return NextResponse.json(
         { error: `Supabase error: ${error.message}` },
         { status: 500 }
@@ -68,7 +73,6 @@ export async function GET(request: Request) {
   }
 }
 
-// API pour récupérer les listes de filtres disponibles
 export async function POST(request: Request) {
   try {
     const { action } = await request.json();
@@ -81,48 +85,51 @@ export async function POST(request: Request) {
     }
 
     if (action === 'get_exutoires') {
-      // Récupérer tous les exutoires uniques
       const { data, error } = await supabase
         .from(table)
         .select('libelle_fournisseur')
-        .not('libelle_fournisseur', 'is', null);
+        .not('libelle_fournisseur', 'is', null)
+        .limit(1000);
       
-      if (error) throw error;
+      if (error) {
+        console.warn('[API/DB/FILTERED] Table might not exist:', table);
+        return NextResponse.json({ exutoires: [] });
+      }
       
-      const unique = [...new Set(data?.map(d => d.libelle_fournisseur) || [])];
-      return NextResponse.json({ 
-        exutoires: unique.sort()
-      });
+      const unique = [...new Set(data?.map(d => d.libelle_fournisseur) || [])].sort();
+      return NextResponse.json({ exutoires: unique });
     }
 
     if (action === 'get_natures') {
-      // Récupérer toutes les natures de gestion uniques
       const { data, error } = await supabase
         .from(table)
         .select('libelle_nature_gestion')
-        .not('libelle_nature_gestion', 'is', null);
+        .not('libelle_nature_gestion', 'is', null)
+        .limit(1000);
       
-      if (error) throw error;
+      if (error) {
+        console.warn('[API/DB/FILTERED] Table might not exist:', table);
+        return NextResponse.json({ natures: [] });
+      }
       
-      const unique = [...new Set(data?.map(d => d.libelle_nature_gestion) || [])];
-      return NextResponse.json({ 
-        natures: unique.sort()
-      });
+      const unique = [...new Set(data?.map(d => d.libelle_nature_gestion) || [])].sort();
+      return NextResponse.json({ natures: unique });
     }
 
     if (action === 'get_ressources') {
-      // Récupérer toutes les ressources uniques
       const { data, error } = await supabase
         .from(table)
         .select('libelle_ressource')
-        .not('libelle_ressource', 'is', null);
+        .not('libelle_ressource', 'is', null)
+        .limit(1000);
       
-      if (error) throw error;
+      if (error) {
+        console.warn('[API/DB/FILTERED] Table might not exist:', table);
+        return NextResponse.json({ ressources: [] });
+      }
       
-      const unique = [...new Set(data?.map(d => d.libelle_ressource) || [])];
-      return NextResponse.json({ 
-        ressources: unique.sort()
-      });
+      const unique = [...new Set(data?.map(d => d.libelle_ressource) || [])].sort();
+      return NextResponse.json({ ressources: unique });
     }
 
     return NextResponse.json({ error: "Action inconnue" }, { status: 400 });

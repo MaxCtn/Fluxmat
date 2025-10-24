@@ -4,7 +4,6 @@ import TabsNav from '../components/TabsNav';
 import FileDrop from '../components/FileDrop';
 import ControlTable from '../components/ControlTable';
 import ExutoireSummary from '../components/ExutoireSummary';
-import DBActive from '../components/DBActive';
 import DatabaseFilter from '../components/DatabaseFilter';
 import Papa from 'papaparse';
 import { saveAs } from '../components/saveAsCsv';
@@ -17,14 +16,18 @@ export default function Page(){
   const [registre, setRegistre] = useState<any[]>([]);
   const [controle, setControle] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
+  const [totalRows, setTotalRows] = useState(0);
 
   async function onUpload(file: File){
-    setLoading(true); setFileName(file.name);
-    const form=new FormData(); form.append('file', file);
+    setLoading(true); 
+    setFileName(file.name);
+    const form=new FormData(); 
+    form.append('file', file);
     const res=await fetch('/api/transform', { method:'POST', body:form });
     const data=await res.json();
     setRegistre(data.registre ?? []);
     setControle(data.controle ?? []);
+    setTotalRows((data.registre?.length ?? 0) + (data.controle?.length ?? 0));
     setLoading(false);
   }
 
@@ -33,7 +36,7 @@ export default function Page(){
     const remaining = controle.filter(r => !fixed.find(f=>f.__id===r.__id));
     setControle(remaining);
     setRegistre(prev => [...prev, ...fixed]);
-    setTab('export'); // tu pourras passer sur Contrôle ou rester ici selon préférence
+    setTab('export');
   }
 
   async function saveToDB(){
@@ -81,20 +84,17 @@ export default function Page(){
             </div>
             <ExutoireSummary sourceRows={registre.length ? registre : controle} />
           </div>
-
-          <div className="card p-6">
-            <div className="flex items-center justify-between mb-2">
-              <h2 className="text-xl font-semibold">Base de données active</h2>
-              <span className="badge">Supabase</span>
-            </div>
-            <DBActive />
-          </div>
         </section>
       )}
 
       {tab==='controle' && (
         <section className="card p-6">
-          <h2 className="text-xl font-semibold mb-2">Contrôle des lignes sans code déchet</h2>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xl font-semibold">Contrôle des lignes sans code déchet</h2>
+            <div className="text-sm bg-orange-100 text-orange-800 px-3 py-1 rounded">
+              📊 Lignes à vérifier : <span className="font-bold">{controle.length}</span> / {totalRows}
+            </div>
+          </div>
           <ControlTable rows={controle} onValidate={onValidateCorrections} />
         </section>
       )}
