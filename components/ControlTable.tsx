@@ -3,6 +3,30 @@ import { useEffect, useState } from 'react';
 
 function normalizeCode(v:string){ return (v||'').replace(/\D/g,'').slice(0,6); }
 
+// Convertir les dates Excel (nombre) en format lisible
+function formatDate(dateValue: any): string {
+  if (!dateValue) return '';
+  
+  // Si c'est déjà une date ISO ou texte formaté
+  if (typeof dateValue === 'string') {
+    // Format DD/MM/YYYY ou YYYY-MM-DD
+    if (dateValue.includes('/') || dateValue.includes('-')) {
+      return dateValue;
+    }
+  }
+  
+  // Si c'est un nombre (Excel date serial)
+  const num = Number(dateValue);
+  if (!isNaN(num) && num > 0) {
+    // Excel date serial: nombre de jours depuis 1900-01-01
+    const excelEpoch = new Date(1900, 0, 1);
+    const date = new Date(excelEpoch.getTime() + (num - 1) * 24 * 60 * 60 * 1000);
+    return date.toLocaleDateString('fr-FR');
+  }
+  
+  return String(dateValue);
+}
+
 export default function ControlTable({ rows, onValidate }:{ rows:any[]; onValidate:(rows:any[])=>void }){
   const [local, setLocal] = useState<any[]>([]);
   useEffect(()=>{ setLocal(rows.map(r=>({...r}))); },[rows.length]);
@@ -17,7 +41,7 @@ export default function ControlTable({ rows, onValidate }:{ rows:any[]; onValida
           <tbody>
             {local.map((r,i)=>(
               <tr key={r.__id ?? i}>
-                <td>{r.dateExpedition ?? r.Date ?? ''}</td>
+                <td>{formatDate(r.dateExpedition ?? r.Date ?? '')}</td>
                 <td className="max-w-[380px]">{r.denominationUsuelle ?? r['Libellé Ressource'] ?? ''}</td>
                 <td>{r['producteur.raisonSociale'] ?? r['Libellé Entité'] ?? ''}</td>
                 <td>{r['producteur.adresse.libelle'] ?? r['Libellé Chantier'] ?? ''}</td>

@@ -1,14 +1,36 @@
 'use client';
-import { useMemo, useState } from 'react';
+import { useState, useMemo } from 'react';
+function groupBy<T,K>(items:T[], fn:(i:T)=>K) { const m = new Map<K,T[]>(); items.forEach(i=>{ const k=fn(i); if(!m.has(k)) m.set(k,[]); m.get(k)!.push(i); }); return m; }
 
-function groupBy<T>(rows: T[], key: (r: T) => string){
-  const m = new Map<string, T[]>(); for (const r of rows){ const k = key(r); m.set(k, [...(m.get(k)||[]), r]); } return m;
-}
 function exutoireName(row:any): string {
-  return row['destinataire.raisonSociale']
-    || row['Libellé Fournisseur']
+  return row['exutoire']
+    || row['Code Fournisseur']
     || row['fournisseur']
     || '—';
+}
+
+// Convertir les dates Excel (nombre) en format lisible
+function formatDate(dateValue: any): string {
+  if (!dateValue) return '';
+  
+  // Si c'est déjà une date ISO ou texte formaté
+  if (typeof dateValue === 'string') {
+    // Format DD/MM/YYYY ou YYYY-MM-DD
+    if (dateValue.includes('/') || dateValue.includes('-')) {
+      return dateValue;
+    }
+  }
+  
+  // Si c'est un nombre (Excel date serial)
+  const num = Number(dateValue);
+  if (!isNaN(num) && num > 0) {
+    // Excel date serial: nombre de jours depuis 1900-01-01
+    const excelEpoch = new Date(1900, 0, 1);
+    const date = new Date(excelEpoch.getTime() + (num - 1) * 24 * 60 * 60 * 1000);
+    return date.toLocaleDateString('fr-FR');
+  }
+  
+  return String(dateValue);
 }
 
 export default function ExutoireSummary({ sourceRows }:{ sourceRows:any[] }){
@@ -73,7 +95,7 @@ export default function ExutoireSummary({ sourceRows }:{ sourceRows:any[] }){
               <tbody>
                 {grouped.get(open)?.map((r,i)=>(
                   <tr key={r.__id ?? i}>
-                    <td>{r.dateExpedition ?? r.Date ?? ""}</td>
+                    <td>{formatDate(r.dateExpedition ?? r.Date)}</td>
                     <td className="max-w-[360px]">{r.denominationUsuelle ?? r["Libellé Ressource"] ?? ""}</td>
                     <td>{r.quantite ?? r.Quantité ?? ""}</td>
                     <td>{r.codeUnite ?? r.Unité ?? ""}</td>
