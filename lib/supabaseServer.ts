@@ -4,7 +4,7 @@ export function getSupabaseServer(){
   try {
     // Utiliser les variables d'environnement Vercel
     const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const serviceKey = process.env.SUPABASE_SERVICE_ROLE;
+    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
     
     if (!url || !serviceKey) {
       console.error('[SUPABASE] Variables d\'environnement manquantes:', {
