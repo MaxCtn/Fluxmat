@@ -9,7 +9,7 @@ export type RegistreRow = {
 };
 export type TransformResult = { registre: RegistreRow[]; controle: (Depense & { suggestionCodeDechet?: string; __id?: string })[]; };
 
-const CODE_DECHET_REGEX = /(?:^|[\s_\-\.])(?:\d{2}\s?\.?\s?\d{2}\s?\.?\s?\d{2})(?=$|[\s_\-\.])/g;
+const CODE_DECHET_REGEX = /[\s_]*(\d{2})\s*(\d{2})\s*(\d{2})\s*$/;
 function normalizeKey(s: string): string {
   return (s || "").normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 }
@@ -18,8 +18,10 @@ function get(obj: Record<string, any>, keys: string[]): any { const idx=buildKey
 
 export function extractCed(label: string | undefined): string | undefined {
   if (!label) return;
-  const matches = [...(label.match(CODE_DECHET_REGEX) ?? [])].map(s=> s.replace(/[^\d]/g,"")).filter(s=> s.length===6);
-  return matches.length ? matches[matches.length-1] : undefined;
+  const match = label.match(CODE_DECHET_REGEX);
+  if (!match) return undefined;
+  const code = `${match[1]}${match[2]}${match[3]}`;
+  return code.length === 6 ? code : undefined;
 }
 export function isMateriauLike(label: string | undefined): boolean {
   if (!label) return false;
