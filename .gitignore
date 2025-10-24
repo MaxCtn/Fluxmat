@@ -6,12 +6,21 @@ node_modules/
 .next/
 out/
 
-# Environment variables
+# Environment variables - TRÈS IMPORTANT !
 .env
 .env.local
 .env.development.local
 .env.test.local
 .env.production.local
+.env.*.local
+
+# ⚠️ SECRETS - Ne jamais committer ces fichiers !
+.env.*
+!.env.example
+*.pem
+*.key
+*.secret
+*.credentials
 
 # Vercel
 .vercel
@@ -84,3 +93,7 @@ temp/
 .Trashes
 ehthumbs.db
 Thumbs.db
+
+# Local development
+.env.local
+.env.production.local
