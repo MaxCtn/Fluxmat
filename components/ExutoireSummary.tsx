@@ -3,7 +3,9 @@ import { useState, useMemo } from 'react';
 function groupBy<T,K>(items:T[], fn:(i:T)=>K) { const m = new Map<K,T[]>(); items.forEach(i=>{ const k=fn(i); if(!m.has(k)) m.set(k,[]); m.get(k)!.push(i); }); return m; }
 
 function exutoireName(row:any): string {
-  return row['exutoire']
+  return row['libelle_fournisseur']
+    || row['Libellé Fournisseur']
+    || row['exutoire']
     || row['Code Fournisseur']
     || row['fournisseur']
     || '—';
