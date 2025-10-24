@@ -5,10 +5,11 @@ import FileDrop from '../components/FileDrop';
 import ControlTable from '../components/ControlTable';
 import ExutoireSummary from '../components/ExutoireSummary';
 import DBActive from '../components/DBActive';
+import DatabaseFilter from '../components/DatabaseFilter';
 import Papa from 'papaparse';
 import { saveAs } from '../components/saveAsCsv';
 
-type TabKey = 'import' | 'controle' | 'export';
+type TabKey = 'import' | 'controle' | 'export' | 'database';
 
 export default function Page(){
   const [tab, setTab] = useState<TabKey>('import');
@@ -58,7 +59,7 @@ export default function Page(){
     <main className="max-w-7xl mx-auto p-6 space-y-6">
       <header className="flex items-center justify-between">
         <h1 className="text-2xl md:text-3xl font-bold">FluxMat — Portail matériaux</h1>
-        <div className="text-sm text-slate-500">Import → Contrôle → Export</div>
+        <div className="text-sm text-slate-500">Import → Contrôle → Export → Base de Données</div>
       </header>
 
       <TabsNav active={tab} onChange={setTab} />
@@ -110,6 +111,12 @@ export default function Page(){
           <div>
             <button className="btn btn-ghost" onClick={saveToDB} disabled={!registre.length}>Enregistrer dans la base (Supabase)</button>
           </div>
+        </section>
+      )}
+
+      {tab==='database' && (
+        <section>
+          <DatabaseFilter />
         </section>
       )}
     </main>

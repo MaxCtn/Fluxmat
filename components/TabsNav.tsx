@@ -1,7 +1,7 @@
 'use client';
 import classNames from 'classnames';
 
-type TabKey = 'import' | 'controle' | 'export';
+type TabKey = 'import' | 'controle' | 'export' | 'database';
 
 export default function TabsNav({ active, onChange }:{ active:TabKey; onChange:(k:TabKey)=>void }){
   const item = (k:TabKey, label:string)=>(
@@ -12,6 +12,7 @@ export default function TabsNav({ active, onChange }:{ active:TabKey; onChange:(
       {item('import','Import Dépenses')}
       {item('controle','Contrôle des lignes')}
       {item('export','Export')}
+      {item('database','📊 Base de Données')}
     </nav>
   );
 }
