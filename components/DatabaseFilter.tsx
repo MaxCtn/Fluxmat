@@ -291,10 +291,10 @@ export default function DatabaseFilter() {
                     <td className="border border-gray-300 p-2">{row.libelle_ressource || '-'}</td>
                     <td className="border border-gray-300 p-2">{row.libelle_nature_gestion || '-'}</td>
                     <td className="border border-gray-300 p-2 text-right">
-                      {row.quantite ? parseFloat(row.quantite).toFixed(2) : '-'}
+                      {row.quantite ? Number(row.quantite).toFixed(2) : '-'}
                     </td>
                     <td className="border border-gray-300 p-2 text-right font-semibold">
-                      {row.montant ? parseFloat(row.montant).toFixed(2) + ' €' : '-'}
+                      {row.montant ? Number(row.montant).toFixed(2) + ' €' : '-'}
                     </td>
                   </tr>
                 ))}
