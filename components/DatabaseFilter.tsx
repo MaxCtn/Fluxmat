@@ -40,27 +40,19 @@ export default function DatabaseFilter() {
   useEffect(() => {
     const loadFilters = async () => {
       try {
-        const headers: HeadersInit = {
-          'Content-Type': 'application/json',
-          ...(brut ? { 'x-brut': 'true' } : {})
-        };
+        const fetchOptions = (action: string) => ({
+          method: 'POST' as const,
+          headers: {
+            'Content-Type': 'application/json',
+            ...(brut ? { 'x-brut': 'true' } : {}),
+          },
+          body: JSON.stringify({ action }),
+        });
         
         const [exutoireRes, naturesRes, ressourcesRes] = await Promise.all([
-          fetch('/api/db/filtered', {
-            method: 'POST',
-            headers,
-            body: JSON.stringify({ action: 'get_exutoires' }),
-          }),
-          fetch('/api/db/filtered', {
-            method: 'POST',
-            headers,
-            body: JSON.stringify({ action: 'get_natures' }),
-          }),
-          fetch('/api/db/filtered', {
-            method: 'POST',
-            headers,
-            body: JSON.stringify({ action: 'get_ressources' }),
-          }),
+          fetch('/api/db/filtered', fetchOptions('get_exutoires')),
+          fetch('/api/db/filtered', fetchOptions('get_natures')),
+          fetch('/api/db/filtered', fetchOptions('get_ressources')),
         ]);
 
         const exutoireData = await exutoireRes.json();
