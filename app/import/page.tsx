@@ -79,17 +79,17 @@ export default function ImportPage() {
     
     // Filtrer par statut
     if (filterStatus === 'bonnes') {
-      filtered = filtered.filter(row => row.codeDechet && row.codeDechet.length === 6);
+      filtered = filtered.filter(row => row.codeDechet && row.codeDechet.trim().length === 6);
     } else if (filterStatus === 'pas_bonnes') {
-      filtered = filtered.filter(row => !row.codeDechet || row.codeDechet.length !== 6);
+      filtered = filtered.filter(row => !row.codeDechet || row.codeDechet.trim() === '' || row.codeDechet.length !== 6);
     }
     
     return filtered;
   }, [registre, controle, filterAgence, filterStatus]);
 
   const totalLignes = lignesFiltrees.length;
-  const lignesValidees = lignesFiltrees.filter(r => r.codeDechet && r.codeDechet.length === 6).length;
-  const lignesATraiter = lignesFiltrees.filter(r => !r.codeDechet || r.codeDechet.length !== 6).length;
+  const lignesValidees = lignesFiltrees.filter(r => r.codeDechet && r.codeDechet.trim().length === 6).length;
+  const lignesATraiter = lignesFiltrees.filter(r => !r.codeDechet || r.codeDechet.trim() === '' || r.codeDechet.length !== 6).length;
 
   return (
     <main className="min-h-dvh bg-gray-50">
