@@ -37,11 +37,41 @@ function suggestFromKeywords(label: string | undefined): string | undefined {
   if (/(gravat|inert)/.test(s)) return "170107"; if (/ferraill/.test(s)) return "170405"; return undefined;
 }
 
+// Filtres selon v_depenses_filtrees
+function passesFilter(row: any): boolean {
+  const origine = get(row, ["Origine", "origine"]);
+  if (origine === 'Pointage personnel') return false;
+
+  const chapitre = get(row, ["Libellé Chapitre Comptable", "Libelle Chapitre Comptable"]);
+  if (!chapitre) return false;
+  const chapitresValides = ['MATERIAUX & CONSOMMABLES', 'MATERIEL', 'S/T & PRESTATAIRES', 'S/T PRODUITS NON SOUMIS A FGX'];
+  if (!chapitresValides.includes(chapitre)) return false;
+
+  const sousChapitre = get(row, ["Libellé Sous-chapitre Comptable", "Libelle Sous-chapitre Comptable"]) || '';
+  const sousChapitresExclus = ['ACIERS', 'CONSOMMABLES', 'FRAIS ANNEXES MATERIEL'];
+  if (sousChapitresExclus.includes(sousChapitre)) return false;
+
+  const rubrique = get(row, ["Libellé Rubrique Comptable", "Libelle Rubrique Comptable"]);
+  if (!rubrique) return false;
+  const rubriquesValides = [
+    'Agregats', 'AMENAGT ESPACES VERT', 'Autres prestations', 'Balisage', 'Enrobes a froid', 'Fraisat',
+    'Loc camions', 'Loc int. camions', 'Loc int. mat transport', 'Loc materiel de transport', 'Loc materiel divers',
+    'Materiaux divers', 'Materiaux recycles', 'Mise decharge materiaux divers', 'Prestation environnement',
+    'Produits de voirie', 'SABLE', 'Sous traitance tiers', 'STPD tiers', 'Traitement dechets inertes'
+  ];
+  if (!rubriquesValides.includes(rubrique)) return false;
+
+  return true;
+}
+
 let rowId=0;
 export function transform(rows: Depense[]): TransformResult {
   const registre: RegistreRow[]=[]; const controle: (Depense & { suggestionCodeDechet?: string; __id?: string })[]=[];
 
   for (const row of rows) {
+    // Filtrer selon v_depenses_filtrees
+    if (!passesFilter(row)) continue;
+
     const label = get(row, ["Libellé Ressource","Libelle Ressource","Libellé Article","Libelle Article"]) ?? "";
     if (!isMateriauLike(label)) continue;
     const date = get(row, ["Date"]) ?? "";
