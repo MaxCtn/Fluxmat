@@ -1,11 +1,23 @@
 'use client';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import Header from '../../components/Header';
+import Footer from '../../components/Footer';
 import Papa from 'papaparse';
 import { saveAs } from '../../components/saveAsCsv';
+import { useRouter } from 'next/navigation';
 
 export default function ExportPage() {
-  const [registre] = useState<any[]>([]);
+  const router = useRouter();
+  const [registre, setRegistre] = useState<any[]>([]);
+
+  useEffect(() => {
+    const saved = sessionStorage.getItem('fluxmat_data');
+    if (saved) {
+      const data = JSON.parse(saved);
+      setRegistre(data.registre || []);
+    }
+  }, []);
 
   async function saveToDB() {
     const res = await fetch('/api/db/save-simple', {
@@ -28,33 +40,38 @@ export default function ExportPage() {
   }
 
   return (
-    <main className="min-h-dvh bg-white text-black">
-      <header className="sticky top-0 z-40 border-b border-gray-200 bg-white/90 backdrop-blur">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3">
-          <Link href="/" className="text-lg font-bold text-black">← Retour</Link>
-          <nav className="flex items-center gap-2">
-            <Link href="/import" className="rounded-lg px-3 py-1.5 text-sm text-gray-700 hover:text-red-600 hover:bg-red-50">Import</Link>
-            <Link href="/controle" className="rounded-lg px-3 py-1.5 text-sm text-gray-700 hover:text-red-600 hover:bg-red-50">Contrôle</Link>
-            <Link href="/export" className="rounded-lg px-3 py-1.5 text-sm text-gray-700 hover:text-red-600 hover:bg-red-50">Export</Link>
-          </nav>
-        </div>
-      </header>
+    <main className="min-h-dvh bg-gray-50">
+      <Header />
 
       <section className="mx-auto max-w-7xl px-4 py-10">
-        <h1 className="text-2xl font-bold mb-6 text-black">Export Registre</h1>
+        <div className="mb-6">
+          <h1 className="text-3xl font-bold mb-2 text-gray-900">Export Registre</h1>
+          <p className="text-gray-600">Téléchargez votre registre au format CSV ou enregistrez-le dans Supabase.</p>
+        </div>
         
-        <div className="rounded-2xl border border-gray-200 bg-white p-6 space-y-4">
-          <p className="text-gray-700 text-sm">Champs: dateExpedition, quantite, codeUnite, denominationUsuelle, codeDechet, producteur.raisonSociale, producteur.adresse.libelle, destinataire.raisonSociale.</p>
+        <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm mb-6">
+          <p className="text-gray-700 text-sm mb-4">
+            Champs exportés: dateExpedition, quantite, codeUnite, denominationUsuelle, codeDechet, 
+            producteur.raisonSociale, producteur.adresse.libelle, destinataire.raisonSociale.
+          </p>
           
-          <div className="flex flex-wrap gap-3 mt-4">
-            <button className="rounded-xl bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-700" onClick={exportCSV} disabled={!registre.length}>
-              Exporter CSV
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <button 
+              className="rounded-lg bg-red-600 px-4 py-3 text-sm font-medium text-white hover:bg-red-700 transition shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed" 
+              onClick={exportCSV} 
+              disabled={!registre.length}
+            >
+              📥 Exporter CSV
             </button>
-            <button className="rounded-xl border border-gray-300 px-3 py-2 text-sm text-black hover:bg-gray-50" onClick={saveToDB} disabled={!registre.length}>
-              Enregistrer dans la base (Supabase)
+            <button 
+              className="rounded-lg border-2 border-blue-300 bg-blue-50 px-4 py-3 text-sm font-medium text-blue-800 hover:bg-blue-100 transition shadow-sm hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed" 
+              onClick={saveToDB} 
+              disabled={!registre.length}
+            >
+              💾 Sauvegarder dans Supabase
             </button>
             <button
-              className="rounded-xl bg-green-600 px-3 py-2 text-sm text-white hover:bg-green-700"
+              className="rounded-lg border-2 border-green-300 bg-green-50 px-4 py-3 text-sm font-medium text-green-800 hover:bg-green-100 transition shadow-sm hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
               onClick={() => alert('Fonctionnalité Export GDM à implémenter')}
               disabled={!registre.length}
             >
@@ -62,7 +79,24 @@ export default function ExportPage() {
             </button>
           </div>
         </div>
+
+        {/* Stats */}
+        {registre.length > 0 && (
+          <div className="rounded-xl border border-green-200 bg-green-50 p-6 animate-fade-in">
+            <div className="flex items-center gap-3">
+              <div className="h-12 w-12 rounded-full bg-green-600 flex items-center justify-center text-white font-bold text-lg">
+                {registre.length}
+              </div>
+              <div>
+                <h3 className="text-lg font-semibold text-green-900">Lignes prêtes à l'export</h3>
+                <p className="text-sm text-green-700">Toutes les lignes ont un code déchet valide</p>
+              </div>
+            </div>
+          </div>
+        )}
       </section>
+
+      <Footer />
     </main>
   );
 }

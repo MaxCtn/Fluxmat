@@ -50,30 +50,6 @@
         "x-next-revalidate-tag-token"
       ]
     },
-    "/import": {
-      "experimentalBypassFor": [
-        {
-          "type": "header",
-          "key": "next-action"
-        },
-        {
-          "type": "header",
-          "key": "content-type",
-          "value": "multipart/form-data;.*"
-        }
-      ],
-      "initialRevalidateSeconds": false,
-      "srcRoute": "/import",
-      "dataRoute": "/import.rsc",
-      "allowHeader": [
-        "host",
-        "x-matched-path",
-        "x-prerender-revalidate",
-        "x-prerender-revalidate-if-generated",
-        "x-next-revalidated-tags",
-        "x-next-revalidate-tag-token"
-      ]
-    },
     "/": {
       "experimentalBypassFor": [
         {
@@ -121,13 +97,37 @@
         "x-next-revalidated-tags",
         "x-next-revalidate-tag-token"
       ]
+    },
+    "/import": {
+      "experimentalBypassFor": [
+        {
+          "type": "header",
+          "key": "next-action"
+        },
+        {
+          "type": "header",
+          "key": "content-type",
+          "value": "multipart/form-data;.*"
+        }
+      ],
+      "initialRevalidateSeconds": false,
+      "srcRoute": "/import",
+      "dataRoute": "/import.rsc",
+      "allowHeader": [
+        "host",
+        "x-matched-path",
+        "x-prerender-revalidate",
+        "x-prerender-revalidate-if-generated",
+        "x-next-revalidated-tags",
+        "x-next-revalidate-tag-token"
+      ]
     }
   },
   "dynamicRoutes": {},
   "notFoundRoutes": [],
   "preview": {
-    "previewModeId": "188b28c6d20c01ae45823ab7ffbeb2e3",
-    "previewModeSigningKey": "1b03f9e1fadfa7bb0747df1d0f19121eb55ed9dd2135c6587611c20eac2ac29f",
-    "previewModeEncryptionKey": "2f4c427bfabc9d08c0aedb59730fb6eba6130ff8f620693e771d686ba5acf15b"
+    "previewModeId": "9df73a8d8f347294c62cbec744400051",
+    "previewModeSigningKey": "62ee884a4a27c66304d76965cd5d9b135dcfbe442a6514409bf42cdcf3ab853d",
+    "previewModeEncryptionKey": "c2d81cb70d75e40b5c7618b715d1882cd2e5484c609a40e96888cf534296ced5"
   }
 }
