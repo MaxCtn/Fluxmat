@@ -24,6 +24,14 @@ type Outstanding = {
   incompleteChantiers: number;
 };
 
+type PendingImport = {
+  id: string;
+  file_name: string;
+  user_name: string;
+  created_at: string;
+  lines_to_complete: number;
+};
+
 type Filters = {
   etab?: ID | null;
   chantier?: ID | null;
@@ -37,6 +45,7 @@ export default function Page() {
   const [numeros, setNumeros] = useState<Numero[]>([]);
   const [lastImport, setLastImport] = useState<LastImport | null>(null);
   const [outstanding, setOutstanding] = useState<Outstanding>({ missingCodes: 0, incompleteChantiers: 0 });
+  const [pendingImports, setPendingImports] = useState<PendingImport[]>([]);
 
   // Charger les établissements au montage
   useEffect(() => {
@@ -93,6 +102,14 @@ export default function Page() {
       }))
       .catch(() => setOutstanding({ missingCodes: 0, incompleteChantiers: 0 }));
   }, [filters.etab, filters.chantier, filters.num]);
+
+  // Charger les imports en attente
+  useEffect(() => {
+    fetch('/api/pending-imports/list')
+      .then(res => res.json())
+      .then(data => setPendingImports(data.items || []))
+      .catch(() => setPendingImports([]));
+  }, []);
 
   function fmtDateTime(iso?: string) {
     if (!iso) return "–";
@@ -242,6 +259,57 @@ export default function Page() {
             </div>
           </div>
         </div>
+
+        {/* Section Fichiers à compléter */}
+        {pendingImports.length > 0 && (
+          <div className="rounded-xl border-2 border-blue-200 bg-blue-50 p-6 shadow-sm">
+            <h2 className="mb-4 text-lg font-semibold text-blue-900">📋 Fichiers à compléter</h2>
+            <div className="grid grid-cols-1 gap-3">
+              {pendingImports.map((pending) => (
+                <div
+                  key={pending.id}
+                  className="flex items-center justify-between rounded-lg border border-blue-200 bg-white p-4 hover:shadow-md transition"
+                >
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="font-medium text-gray-900">{pending.file_name}</span>
+                      <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded text-xs font-semibold">
+                        {pending.lines_to_complete} lignes
+                      </span>
+                    </div>
+                    <div className="text-xs text-gray-600">
+                      Créé le {new Date(pending.created_at).toLocaleDateString('fr-FR')} par {pending.user_name}
+                    </div>
+                  </div>
+                  <button
+                    onClick={async () => {
+                      try {
+                        const res = await fetch(`/api/pending-imports/load/${pending.id}`);
+                        const data = await res.json();
+                        if (data.ok) {
+                          sessionStorage.setItem('fluxmat_data', JSON.stringify({
+                            registre: data.registre,
+                            controle: data.controle,
+                            fileName: data.file_name
+                          }));
+                          window.location.href = '/controle';
+                        } else {
+                          alert('Erreur lors du chargement du fichier');
+                        }
+                      } catch (err) {
+                        console.error('Erreur:', err);
+                        alert('Erreur lors du chargement du fichier');
+                      }
+                    }}
+                    className="ml-4 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 transition"
+                  >
+                    Reprendre →
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Section À propos */}
         <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">

@@ -1,5 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
+import Toast from './Toast';
 
 function normalizeCode(v: string) { return (v || '').replace(/\D/g, '').slice(0, 6); }
 
@@ -24,6 +25,7 @@ export default function ControlTable({ rows, onValidate }: { rows: any[]; onVali
   const [editMode, setEditMode] = useState(false);
   const [editingRow, setEditingRow] = useState<any | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   useEffect(() => {
     const updatedRows = rows.map(r => ({ ...r }));
@@ -34,14 +36,22 @@ export default function ControlTable({ rows, onValidate }: { rows: any[]; onVali
   const rowsValidees = allRows.filter(r => r.codeDechet && r.codeDechet.length === 6);
 
   function autoCompleteAll() {
+    let count = 0;
     const updated = allRows.map(row => {
-      if (row.suggestionCodeDechet && (!row.codeDechet || row.codeDechet.length !== 6)) {
+      if (row.suggestionCodeDechet) {
+        const prevCode = row.codeDechet;
+        const hasValidCode = prevCode && prevCode.trim().length === 6;
+        
+        // Toujours remplacer par la suggestion, même si code déjà présent
+        if (!hasValidCode) {
+          count++;
+        }
         return { ...row, codeDechet: row.suggestionCodeDechet };
       }
       return row;
     });
     setAllRows(updated);
-    alert(`${updated.filter(r => r.codeDechet && r.codeDechet.length === 6).length} lignes auto-complétées !`);
+    setToastMessage(`${count} lignes auto-complétées avec succès !`);
   }
 
   function handleModify(row: any) {
@@ -75,7 +85,7 @@ export default function ControlTable({ rows, onValidate }: { rows: any[]; onVali
         <div className="flex gap-3">
           <button
             onClick={autoCompleteAll}
-            className="rounded-lg bg-orange-600 px-4 py-2 text-sm font-medium text-white hover:bg-orange-700 transition shadow-md hover:shadow-lg disabled:opacity-50"
+            className="rounded-lg bg-blue-100 text-blue-700 px-4 py-2 text-sm font-medium hover:bg-blue-200 transition shadow-md hover:shadow-lg disabled:opacity-50"
             disabled={rowsARegler.length === 0}
           >
             ✨ Auto-compléter toutes les lignes
@@ -146,7 +156,7 @@ export default function ControlTable({ rows, onValidate }: { rows: any[]; onVali
                     </td>
                     <td className="px-3 py-2 text-center">
                       <button
-                        className="btn btn-ghost bg-blue-600 text-white hover:bg-blue-700"
+                        className="rounded-lg px-3 py-1 text-sm font-medium bg-blue-100 text-blue-700 hover:bg-blue-200 transition"
                         disabled={!r.suggestionCodeDechet}
                         onClick={() => {
                           const idx = allRows.findIndex(row => row.__id === r.__id);
@@ -284,6 +294,14 @@ export default function ControlTable({ rows, onValidate }: { rows: any[]; onVali
       {confirmDelete && (
         <ConfirmDeleteModal onConfirm={() => handleDelete(confirmDelete)} onCancel={() => setConfirmDelete(null)} />
       )}
+
+      {/* Toast */}
+      {toastMessage && (
+        <Toast
+          message={toastMessage}
+          onClose={() => setToastMessage(null)}
+        />
+      )}
     </div>
   );
 }
@@ -292,52 +310,84 @@ function EditModal({ row, onSave, onCancel }: { row: any; onSave: (row: any) => 
   const [edited, setEdited] = useState(row);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm animate-fade-in">
-      <div className="bg-white rounded-xl shadow-xl max-w-2xl w-full mx-4 p-6 animate-slide-up max-h-[90vh] overflow-y-auto">
-        <h3 className="text-lg font-semibold mb-4 text-gray-900">Modifier la ligne</h3>
-        <div className="space-y-3">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-md animate-fade-in">
+      <div className="bg-[#2A2A2E] rounded-2xl shadow-2xl max-w-2xl w-full mx-4 p-6 animate-scale-in max-h-[90vh] overflow-y-auto border border-white/10">
+        <div className="flex items-center gap-3 mb-6 pb-4 border-b border-white/10">
+          <svg className="w-6 h-6 text-cyan-400" fill="currentColor" viewBox="0 0 20 20">
+            <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.603L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" />
+          </svg>
+          <h3 className="text-lg font-semibold text-white">Modifier la ligne</h3>
+        </div>
+        <div className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Date</label>
+            <label className="block text-sm font-medium text-gray-300 mb-2">Date</label>
             <input
               type="text"
               value={formatDate(edited.dateExpedition ?? edited.Date ?? '')}
               onChange={(e) => setEdited({ ...edited, dateExpedition: e.target.value, Date: e.target.value })}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:ring-2 focus:ring-red-500"
+              className="w-full rounded-lg bg-white/5 border border-white/20 px-3 py-2 outline-none focus:ring-2 focus:ring-cyan-500 text-white placeholder-gray-500"
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Quantité</label>
+            <label className="block text-sm font-medium text-gray-300 mb-2">Quantité</label>
             <input
               type="number"
               value={edited.quantite ?? edited.Quantité ?? ''}
               onChange={(e) => setEdited({ ...edited, quantite: e.target.value, Quantité: e.target.value })}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:ring-2 focus:ring-red-500"
+              className="w-full rounded-lg bg-white/5 border border-white/20 px-3 py-2 outline-none focus:ring-2 focus:ring-cyan-500 text-white"
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Unité</label>
+            <label className="block text-sm font-medium text-gray-300 mb-2">Unité</label>
             <input
               type="text"
               value={edited.codeUnite ?? edited.Unité ?? ''}
               onChange={(e) => setEdited({ ...edited, codeUnite: e.target.value, Unité: e.target.value })}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:ring-2 focus:ring-red-500"
+              className="w-full rounded-lg bg-white/5 border border-white/20 px-3 py-2 outline-none focus:ring-2 focus:ring-cyan-500 text-white"
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Code Déchet</label>
+            <label className="block text-sm font-medium text-gray-300 mb-2">Code Déchet</label>
             <input
               type="text"
               value={edited.codeDechet ?? ''}
               onChange={(e) => setEdited({ ...edited, codeDechet: (e.target.value || '').replace(/\D/g, '').slice(0, 6) })}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:ring-2 focus:ring-red-500"
+              className="w-full rounded-lg bg-white/5 border border-white/20 px-3 py-2 outline-none focus:ring-2 focus:ring-cyan-500 text-white"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-300 mb-2">Ressource</label>
+            <textarea
+              value={edited.denominationUsuelle ?? edited['Libellé Ressource'] ?? ''}
+              onChange={(e) => setEdited({ ...edited, denominationUsuelle: e.target.value, 'Libellé Ressource': e.target.value })}
+              className="w-full rounded-lg bg-white/5 border border-white/20 px-3 py-2 outline-none focus:ring-2 focus:ring-cyan-500 text-white resize-none"
+              rows={2}
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-300 mb-2">Entité</label>
+            <input
+              type="text"
+              value={edited['producteur.raisonSociale'] ?? edited['Libellé Entité'] ?? ''}
+              onChange={(e) => setEdited({ ...edited, 'producteur.raisonSociale': e.target.value, 'Libellé Entité': e.target.value })}
+              className="w-full rounded-lg bg-white/5 border border-white/20 px-3 py-2 outline-none focus:ring-2 focus:ring-cyan-500 text-white"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-300 mb-2">Chantier</label>
+            <input
+              type="text"
+              value={edited['producteur.adresse.libelle'] ?? edited['Libellé Chantier'] ?? ''}
+              onChange={(e) => setEdited({ ...edited, 'producteur.adresse.libelle': e.target.value, 'Libellé Chantier': e.target.value })}
+              className="w-full rounded-lg bg-white/5 border border-white/20 px-3 py-2 outline-none focus:ring-2 focus:ring-cyan-500 text-white"
             />
           </div>
         </div>
-        <div className="flex gap-3 mt-6">
-          <button onClick={() => onSave(edited)} className="flex-1 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 transition">
+        <div className="flex gap-3 mt-8 pt-4 border-t border-white/10">
+          <button onClick={() => onSave(edited)} className="flex-1 rounded-lg bg-cyan-500 hover:bg-cyan-400 px-4 py-3 text-sm font-medium text-white transition shadow-lg hover:shadow-xl">
             Enregistrer
           </button>
-          <button onClick={onCancel} className="flex-1 rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition">
+          <button onClick={onCancel} className="flex-1 rounded-lg border border-white/20 bg-white/5 px-4 py-3 text-sm font-medium text-white hover:bg-white/10 transition">
             Annuler
           </button>
         </div>
@@ -348,15 +398,20 @@ function EditModal({ row, onSave, onCancel }: { row: any; onSave: (row: any) => 
 
 function ConfirmDeleteModal({ onConfirm, onCancel }: { onConfirm: () => void; onCancel: () => void }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm animate-fade-in">
-      <div className="bg-white rounded-xl shadow-xl max-w-md w-full mx-4 p-6 animate-slide-up">
-        <h3 className="text-lg font-semibold mb-2 text-gray-900">Confirmer la suppression</h3>
-        <p className="text-gray-600 mb-4">Êtes-vous sûr de vouloir supprimer cette ligne ?</p>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-md animate-fade-in">
+      <div className="bg-[#2A2A2E] rounded-2xl shadow-2xl max-w-md w-full mx-4 p-6 animate-scale-in border border-white/10">
+        <div className="flex items-center gap-3 mb-4 pb-4 border-b border-white/10">
+          <svg className="w-6 h-6 text-red-400" fill="currentColor" viewBox="0 0 20 20">
+            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+          </svg>
+          <h3 className="text-lg font-semibold text-white">Confirmer la suppression</h3>
+        </div>
+        <p className="text-gray-300 mb-6">Êtes-vous sûr de vouloir supprimer cette ligne ?</p>
         <div className="flex gap-3">
-          <button onClick={onConfirm} className="flex-1 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 transition">
+          <button onClick={onConfirm} className="flex-1 rounded-lg bg-red-500 hover:bg-red-400 px-4 py-3 text-sm font-medium text-white transition shadow-lg hover:shadow-xl">
             Supprimer
           </button>
-          <button onClick={onCancel} className="flex-1 rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition">
+          <button onClick={onCancel} className="flex-1 rounded-lg border border-white/20 bg-white/5 px-4 py-3 text-sm font-medium text-white hover:bg-white/10 transition">
             Annuler
           </button>
         </div>

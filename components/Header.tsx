@@ -17,6 +17,9 @@ export default function Header() {
               className="h-8 w-auto"
             />
             <nav className="flex items-center gap-2">
+              <Link href="/" className="rounded-lg px-3 py-1.5 text-sm text-gray-700 hover:text-red-600 hover:bg-red-50">
+                Tableau de bord
+              </Link>
               <Link href="/import" className="rounded-lg px-3 py-1.5 text-sm text-gray-700 hover:text-red-600 hover:bg-red-50">
                 Import
               </Link>

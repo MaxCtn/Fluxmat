@@ -5,12 +5,14 @@ import ControlTable from '../../components/ControlTable';
 import Header from '../../components/Header';
 import Footer from '../../components/Footer';
 import { useRouter } from 'next/navigation';
+import { AlertModal } from '../../components/Modal';
 
 export default function ControlePage() {
   const router = useRouter();
   const [controle, setControle] = useState<any[]>([]);
   const [registre, setRegistre] = useState<any[]>([]);
   const [fileName, setFileName] = useState<string | undefined>();
+  const [modalState, setModalState] = useState({ isOpen: false, message: '', fixed: 0, remaining: 0 });
 
   // Charger les données depuis sessionStorage
   useEffect(() => {
@@ -39,27 +41,64 @@ export default function ControlePage() {
     setRegistre([...registre, ...fixed]);
     
     if (remaining.length === 0) {
-      alert('Toutes les lignes ont été corrigées ! Redirection vers l\'export.');
-      router.push('/export');
+      setModalState({ 
+        isOpen: true, 
+        message: 'Toutes les lignes ont été corrigées ! Redirection vers l\'export.',
+        fixed: fixed.length,
+        remaining: 0 
+      });
+      setTimeout(() => {
+        router.push('/export');
+      }, 2000);
     } else {
-      alert(`${fixed.length} lignes corrigées. ${remaining.length} lignes restent à traiter.`);
+      setModalState({ 
+        isOpen: true, 
+        message: `${fixed.length} lignes corrigées. ${remaining.length} lignes restent à traiter.`,
+        fixed: fixed.length,
+        remaining: remaining.length 
+      });
     }
   }
 
-  function handleReportLater() {
-    // Marquer les lignes comme "à compléter plus tard"
-    const savedData = sessionStorage.getItem('fluxmat_data');
-    if (savedData) {
-      const data = JSON.parse(savedData);
-      data.toComplete = controle.map(row => ({
-        ...row,
-        toComplete: true,
-        markedAt: new Date().toISOString()
-      }));
-      sessionStorage.setItem('fluxmat_data', JSON.stringify(data));
+  async function handleReportLater() {
+    try {
+      const dataToSave = {
+        file_name: fileName || 'sans-nom.xlsx',
+        user_name: 'Maxime Contino',
+        registre: registre || [],
+        controle: controle || [],
+      };
+
+      const res = await fetch('/api/pending-imports/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(dataToSave),
+      });
+
+      const data = await res.json();
+      
+      if (!res.ok || data.error) {
+        throw new Error(data.error || 'Erreur lors de la sauvegarde');
+      }
+
+      setModalState({ 
+        isOpen: true, 
+        message: 'Fichier enregistré pour être complété plus tard.',
+        fixed: 0,
+        remaining: 0 
+      });
+      setTimeout(() => {
+        router.push('/');
+      }, 2000);
+    } catch (err: any) {
+      console.error('Erreur handleReportLater:', err);
+      setModalState({ 
+        isOpen: true, 
+        message: `Erreur: ${err.message}`,
+        fixed: 0,
+        remaining: 0 
+      });
     }
-    alert('Les lignes ont été enregistrées pour complétion ultérieure. Retour au tableau de bord.');
-    router.push('/');
   }
 
   if (!controle.length) {
@@ -142,6 +181,15 @@ export default function ControlePage() {
       </section>
 
       <Footer />
+
+      {/* Modal d'alerte */}
+      <AlertModal
+        isOpen={modalState.isOpen}
+        onClose={() => setModalState({ ...modalState, isOpen: false })}
+        message={modalState.message}
+        fixed={modalState.fixed}
+        remaining={modalState.remaining}
+      />
     </main>
   );
 }
