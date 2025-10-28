@@ -37,7 +37,7 @@ export async function GET(request: Request) {
     let chantiersQuery = supabase
       .from('registre_flux')
       .select('code_chantier', { count: 'exact' })
-      .or('code_dechet.is.null,code_dechet.eq.''')
+      .or('code_dechet.is.null,code_dechet.eq.')
       .not('code_chantier', 'is', null);
 
     if (etab) {

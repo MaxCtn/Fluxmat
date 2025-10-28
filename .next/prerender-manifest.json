@@ -50,7 +50,7 @@
         "x-next-revalidate-tag-token"
       ]
     },
-    "/export": {
+    "/import": {
       "experimentalBypassFor": [
         {
           "type": "header",
@@ -63,8 +63,8 @@
         }
       ],
       "initialRevalidateSeconds": false,
-      "srcRoute": "/export",
-      "dataRoute": "/export.rsc",
+      "srcRoute": "/import",
+      "dataRoute": "/import.rsc",
       "allowHeader": [
         "host",
         "x-matched-path",
@@ -98,7 +98,7 @@
         "x-next-revalidate-tag-token"
       ]
     },
-    "/import": {
+    "/export": {
       "experimentalBypassFor": [
         {
           "type": "header",
@@ -111,8 +111,8 @@
         }
       ],
       "initialRevalidateSeconds": false,
-      "srcRoute": "/import",
-      "dataRoute": "/import.rsc",
+      "srcRoute": "/export",
+      "dataRoute": "/export.rsc",
       "allowHeader": [
         "host",
         "x-matched-path",
