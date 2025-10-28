@@ -55,7 +55,13 @@ export default function ControlTable({ rows, onValidate }: { rows: any[]; onVali
   }
 
   function handleDelete(rowId: string) {
-    const updated = allRows.filter((r) => r.__id !== rowId);
+    console.log('handleDelete called with rowId:', rowId);
+    console.log('allRows before:', allRows.length);
+    const updated = allRows.filter((r) => {
+      console.log('Checking:', r.__id, 'vs', rowId);
+      return r.__id !== rowId;
+    });
+    console.log('allRows after:', updated.length);
     setAllRows(updated);
     setConfirmDelete(null);
   }
@@ -69,7 +75,7 @@ export default function ControlTable({ rows, onValidate }: { rows: any[]; onVali
         <div className="flex gap-3">
           <button
             onClick={autoCompleteAll}
-            className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 transition shadow-md hover:shadow-lg"
+            className="rounded-lg bg-orange-600 px-4 py-2 text-sm font-medium text-white hover:bg-orange-700 transition shadow-md hover:shadow-lg disabled:opacity-50"
             disabled={rowsARegler.length === 0}
           >
             ✨ Auto-compléter toutes les lignes
