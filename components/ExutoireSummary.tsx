@@ -46,7 +46,6 @@ interface ExutoireSummaryProps {
 export default function ExutoireSummary({ sourceRows, onRowsChange }: ExutoireSummaryProps) {
   const [open, setOpen] = useState<string | undefined>(undefined);
   const [filterCarriere, setFilterCarriere] = useState<string>('toutes');
-  const [filterStatus, setFilterStatus] = useState<string>('toutes'); // 'toutes', 'avec_code', 'sans_code'
   const [editingRow, setEditingRow] = useState<any | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [rows, setRows] = useState(sourceRows);
@@ -60,21 +59,10 @@ export default function ExutoireSummary({ sourceRows, onRowsChange }: ExutoireSu
   
   const entries = useMemo(() => {
     let filtered = [...grouped.entries()];
+    
+    // Filtrer par carrière uniquement
     if (filterCarriere !== 'toutes') {
       filtered = filtered.filter(([exo]) => exo === filterCarriere);
-    }
-    
-    // Filtrer par statut de code déchet
-    if (filterStatus === 'avec_code') {
-      filtered = filtered.map(([exo, rows]) => [
-        exo,
-        rows.filter(r => r.codeDechet && r.codeDechet.length === 6)
-      ]);
-    } else if (filterStatus === 'sans_code') {
-      filtered = filtered.map(([exo, rows]) => [
-        exo,
-        rows.filter(r => !r.codeDechet || r.codeDechet.length !== 6)
-      ]);
     }
     
     return filtered
@@ -84,9 +72,9 @@ export default function ExutoireSummary({ sourceRows, onRowsChange }: ExutoireSu
         const unite = rows[0]?.codeUnite ?? rows[0]?.Unité ?? 'T';
         return { exutoire: exo, quantite, count, unite, rows };
       })
-      .filter(({ count }) => count > 0) // Retirer les carrières vides après filtrage
+      .filter(({ count }) => count > 0)
       .sort((a, b) => b.quantite - a.quantite);
-  }, [grouped, filterCarriere, filterStatus]);
+  }, [grouped, filterCarriere]);
 
   const carrieres = useMemo(() => [...grouped.keys()].sort(), [grouped]);
 
@@ -133,19 +121,6 @@ export default function ExutoireSummary({ sourceRows, onRowsChange }: ExutoireSu
           </div>
         )}
         
-        {/* Filtre statut code déchet */}
-        <div className="flex items-center gap-2">
-          <label className="text-sm font-medium text-gray-700">Statut:</label>
-          <select
-            value={filterStatus}
-            onChange={(e) => setFilterStatus(e.target.value)}
-            className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-red-500"
-          >
-            <option value="toutes">Toutes les lignes</option>
-            <option value="avec_code">Lignes avec code</option>
-            <option value="sans_code">Lignes sans code</option>
-          </select>
-        </div>
       </div>
 
       <div className="overflow-x-auto rounded-lg border border-gray-200">
