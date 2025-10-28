@@ -1,14 +1,27 @@
 'use client';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import FileDrop from '../../components/FileDrop';
 import ExutoireSummary from '../../components/ExutoireSummary';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 
 export default function ImportPage() {
+  const router = useRouter();
   const [fileName, setFileName] = useState<string | undefined>();
   const [registre, setRegistre] = useState<any[]>([]);
   const [controle, setControle] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
+
+  // Charger les données depuis sessionStorage au montage
+  useEffect(() => {
+    const saved = sessionStorage.getItem('fluxmat_data');
+    if (saved) {
+      const data = JSON.parse(saved);
+      setRegistre(data.registre || []);
+      setControle(data.controle || []);
+      setFileName(data.fileName);
+    }
+  }, []);
 
   async function onUpload(file: File) {
     setLoading(true);
@@ -17,9 +30,27 @@ export default function ImportPage() {
     form.append('file', file);
     const res = await fetch('/api/transform', { method: 'POST', body: form });
     const data = await res.json();
-    setRegistre(data.registre ?? []);
-    setControle(data.controle ?? []);
+    const newRegistre = data.registre ?? [];
+    const newControle = data.controle ?? [];
+    setRegistre(newRegistre);
+    setControle(newControle);
+    // Sauvegarder dans sessionStorage
+    sessionStorage.setItem('fluxmat_data', JSON.stringify({
+      registre: newRegistre,
+      controle: newControle,
+      fileName: file.name
+    }));
     setLoading(false);
+  }
+
+  function navigateToControle() {
+    // S'assurer que les données sont sauvegardées
+    sessionStorage.setItem('fluxmat_data', JSON.stringify({
+      registre,
+      controle,
+      fileName
+    }));
+    router.push('/controle');
   }
 
   return (
@@ -48,9 +79,12 @@ export default function ImportPage() {
             <div className="mt-6 space-y-3">
               <div className="flex items-center justify-between">
                 <h3 className="text-lg font-semibold text-black">Prévisualisation des données ({registre.length + controle.length} lignes)</h3>
-                <Link href="/controle" className="rounded-xl bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-700">
+                <button 
+                  onClick={navigateToControle}
+                  className="rounded-xl bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-700"
+                >
                   Passer au contrôle des lignes →
-                </Link>
+                </button>
               </div>
               
               <div className="text-sm bg-red-50 border border-red-200 p-3 rounded-lg">

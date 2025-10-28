@@ -1,28 +1,27 @@
 "use client";
 
-import Image from "next/image";
-import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import Header from "../components/Header";
+import Footer from "../components/Footer";
+import DashboardTable from "../components/DashboardTable";
+import Link from "next/link";
 
-/* ===========================
-   Types
-=========================== */
 type ID = string;
 
-type Etablissement = { id: ID; label: string };
-type Chantier = { id: ID; label: string; etabId: ID };
-type Numero = { id: ID; numero: string; chantierId: ID };
+type Etablissement = { id: string; label: string };
+type Chantier = { id: string; label: string; etabId: string };
+type Numero = { id: string; numero: string; chantierId: string };
 
 type LastImport = {
-  at: string;        // ISO
+  at: string;
   fileName?: string;
   user?: string;
   rowCount?: number;
 };
 
 type Outstanding = {
-  missingCodes: number;        // lignes sans code déchet
-  incompleteChantiers: number; // chantiers non saisis / incomplets
+  missingCodes: number;
+  incompleteChantiers: number;
 };
 
 type Filters = {
@@ -31,152 +30,115 @@ type Filters = {
   num?: string | null;
 };
 
-/* ===========================
-   MOCK DATA (remplace par tes appels API)
-   -> brancher:
-      - GET /api/meta/establishments
-      - GET /api/meta/chantiers?etab=...
-      - GET /api/meta/numeros?chantier=...
-      - GET /api/meta/last-import?etab=...&chantier=...&num=...
-      - GET /api/meta/outstanding?...
-=========================== */
-const mockEtabs: Etablissement[] = [
-  { id: "etab-1", label: "Eiffage Agence Nord" },
-  { id: "etab-2", label: "Eiffage Agence Ouest" },
-];
-
-const mockChantiers: Chantier[] = [
-  { id: "ch-1", label: "ZAC Les Dunes", etabId: "etab-1" },
-  { id: "ch-2", label: "Avenue du Port", etabId: "etab-1" },
-  { id: "ch-3", label: "RD-102 Contournement", etabId: "etab-2" },
-];
-
-const mockNumeros: Numero[] = [
-  { id: "n-1", numero: "CH-2025-034", chantierId: "ch-1" },
-  { id: "n-2", numero: "CH-2025-035", chantierId: "ch-1" },
-  { id: "n-3", numero: "CH-2025-210", chantierId: "ch-2" },
-  { id: "n-4", numero: "CH-2025-011", chantierId: "ch-3" },
-];
-
-function mockFetchLastImport(_: Filters): Promise<LastImport | null> {
-  return Promise.resolve({
-    at: new Date(Date.now() - 1000 * 60 * 60 * 6).toISOString(),
-    fileName: "export_prc_2025-10-26.xlsx",
-    user: "m.dupont",
-    rowCount: 842,
-  });
-}
-
-function mockFetchOutstanding(_: Filters): Promise<Outstanding> {
-  return Promise.resolve({ missingCodes: 37, incompleteChantiers: 2 });
-}
-
-/* ===========================
-   Helpers
-=========================== */
-function fmtDateTime(iso?: string) {
-  if (!iso) return "–";
-  const d = new Date(iso);
-  return new Intl.DateTimeFormat("fr-FR", { dateStyle: "medium", timeStyle: "short" }).format(d);
-}
-
-/* ===========================
-   Page
-=========================== */
 export default function Page() {
   const [filters, setFilters] = useState<Filters>({ etab: null, chantier: null, num: null });
-
-  // Cascades
-  const chantiers = useMemo(
-    () => (filters.etab ? mockChantiers.filter((c) => c.etabId === filters.etab) : []),
-    [filters.etab]
-  );
-  const numeros = useMemo(
-    () => (filters.chantier ? mockNumeros.filter((n) => n.chantierId === filters.chantier) : []),
-    [filters.chantier]
-  );
-
-  // Data cards
+  const [etabs, setEtabs] = useState<Etablissement[]>([]);
+  const [chantiers, setChantiers] = useState<Chantier[]>([]);
+  const [numeros, setNumeros] = useState<Numero[]>([]);
   const [lastImport, setLastImport] = useState<LastImport | null>(null);
   const [outstanding, setOutstanding] = useState<Outstanding>({ missingCodes: 0, incompleteChantiers: 0 });
 
+  // Charger les établissements au montage
   useEffect(() => {
-    // Remplace par fetch('/api/meta/last-import?...')
-    mockFetchLastImport(filters).then(setLastImport);
-    // Remplace par fetch('/api/meta/outstanding?...')
-    mockFetchOutstanding(filters).then(setOutstanding);
+    fetch('/api/dashboard/filters?type=etablissements')
+      .then(res => res.json())
+      .then(data => setEtabs(data.items || []))
+      .catch(() => setEtabs([]));
+  }, []);
+
+  // Charger les chantiers quand un établissement est sélectionné
+  useEffect(() => {
+    if (filters.etab) {
+      fetch(`/api/dashboard/filters?type=chantiers&etab=${filters.etab}`)
+        .then(res => res.json())
+        .then(data => setChantiers(data.items || []))
+        .catch(() => setChantiers([]));
+    } else {
+      setChantiers([]);
+    }
+  }, [filters.etab]);
+
+  // Charger les numéros quand un chantier est sélectionné
+  useEffect(() => {
+    if (filters.chantier && filters.etab) {
+      fetch(`/api/dashboard/filters?type=numeros&etab=${filters.etab}`)
+        .then(res => res.json())
+        .then(data => setNumeros(data.items || []))
+        .catch(() => setNumeros([]));
+    } else {
+      setNumeros([]);
+    }
+  }, [filters.chantier, filters.etab]);
+
+  // Charger dernier import et tâches en attente
+  useEffect(() => {
+    // Simuler dernier import (à remplacer par vraie API imports_log)
+    setLastImport({
+      at: new Date(Date.now() - 1000 * 60 * 60 * 6).toISOString(),
+      fileName: "export_prc_2025-10-26.xlsx",
+      user: "Système",
+      rowCount: 842,
+    });
+
+    // Charger tâches en attente
+    const params = new URLSearchParams();
+    if (filters.etab) params.append('etab', filters.etab);
+    if (filters.chantier) params.append('chantier', filters.chantier);
+
+    fetch(`/api/dashboard/outstanding?${params.toString()}`)
+      .then(res => res.json())
+      .then(data => setOutstanding({
+        missingCodes: data.missingCodes || 0,
+        incompleteChantiers: data.incompleteChantiers || 0
+      }))
+      .catch(() => setOutstanding({ missingCodes: 0, incompleteChantiers: 0 }));
   }, [filters.etab, filters.chantier, filters.num]);
 
+  function fmtDateTime(iso?: string) {
+    if (!iso) return "–";
+    const d = new Date(iso);
+    return new Intl.DateTimeFormat("fr-FR", { dateStyle: "medium", timeStyle: "short" }).format(d);
+  }
+
   return (
-    <main className="min-h-dvh bg-white text-black">
-      {/* Header minimal */}
-      <header className="sticky top-0 z-40 border-b border-gray-200 bg-white/90 backdrop-blur">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3">
-          <div className="flex items-center gap-3">
-            <Image src="/images/eiffage-logo-1.png" alt="Eiffage" width={120} height={32} className="h-8 w-auto" priority />
-            <span className="hidden text-sm text-gray-500 md:block">Flux de matériaux — Tableau de bord</span>
-          </div>
-          <nav className="flex items-center gap-2">
-            <Link href="/import" className="rounded-lg px-3 py-1.5 text-sm text-gray-700 hover:text-red-600 hover:bg-red-50">Import</Link>
-            <Link href="/controle" className="rounded-lg px-3 py-1.5 text-sm text-gray-700 hover:text-red-600 hover:bg-red-50">Contrôle</Link>
-            <Link href="/export" className="rounded-lg px-3 py-1.5 text-sm text-gray-700 hover:text-red-600 hover:bg-red-50">Export</Link>
-          </nav>
-        </div>
-      </header>
+    <main className="min-h-dvh bg-gray-50">
+      <Header />
 
-      {/* Intro */}
-      <section className="mx-auto max-w-7xl px-4 pb-8 pt-10">
-        <div className="grid items-center gap-6 md:grid-cols-[1.3fr,0.7fr]">
-          <div>
-            <h1 className="text-2xl font-bold">FluxMat — Tableau de bord</h1>
-            <p className="mt-3 text-gray-700">
-              Importez vos fichiers PRC/PIDOT, corrigez les lignes sans code déchet, puis exportez un registre conforme.
-              Utilisez les filtres ci-dessous pour cibler un Établissement, un Chantier et un N° chantier ; accédez au dernier import et
-              suivez les tâches en attente (codes manquants, chantiers incomplets).
-            </p>
-          </div>
-          <div className="flex justify-end">
-            <Image
-              src="/images/Eiffage_trame_modeclair.png"
-              alt="Eiffage marque"
-              width={300}
-              height={300}
-              className="h-40 w-auto opacity-90"
-              priority
-            />
-          </div>
+      <section className="mx-auto max-w-7xl px-4 py-10">
+        <div className="mb-8">
+          <h1 className="text-3xl font-bold text-gray-900 mb-3">FluxMat — Tableau de bord</h1>
+          <p className="text-gray-600 max-w-3xl">
+            Importez vos fichiers PRC/PIDOT, corrigez les lignes sans code déchet, puis exportez un registre conforme.
+            Utilisez les filtres pour cibler un établissement, un chantier et un numéro de chantier.
+          </p>
         </div>
-      </section>
 
-      {/* Filtres */}
-      <section className="mx-auto max-w-7xl px-4">
-        <div className="rounded-2xl border border-gray-200 bg-white p-4">
-          <h2 className="mb-3 text-lg font-semibold">Filtres</h2>
-          <div className="grid gap-3 md:grid-cols-3">
-            <div className="space-y-1">
-              <label className="text-xs text-gray-600">Établissement / Agence</label>
+        {/* Filtres */}
+        <div className="rounded-xl border border-gray-200 bg-white p-6 mb-8 shadow-sm">
+          <h2 className="mb-4 text-lg font-semibold text-gray-900">Filtres</h2>
+          <div className="grid gap-4 md:grid-cols-3">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Établissement / Agence
+              </label>
               <select
-                className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-red-400"
+                className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500"
                 value={filters.etab ?? ""}
-                onChange={(e) =>
-                  setFilters({ etab: e.target.value || null, chantier: null, num: null })
-                }
+                onChange={(e) => setFilters({ etab: e.target.value || null, chantier: null, num: null })}
               >
                 <option value="">Sélectionner</option>
-                {mockEtabs.map((e) => (
+                {etabs.map((e) => (
                   <option key={e.id} value={e.id}>{e.label}</option>
                 ))}
               </select>
             </div>
 
-            <div className="space-y-1">
-              <label className="text-xs text-gray-600">Chantier</label>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Chantier</label>
               <select
-                className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm outline-none disabled:opacity-50 focus:ring-2 focus:ring-red-400"
+                className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm outline-none disabled:opacity-50 focus:ring-2 focus:ring-red-500 focus:border-red-500"
                 value={filters.chantier ?? ""}
-                onChange={(e) =>
-                  setFilters((f) => ({ ...f, chantier: e.target.value || null, num: null }))
-                }
+                onChange={(e) => setFilters((f) => ({ ...f, chantier: e.target.value || null, num: null }))}
                 disabled={!filters.etab}
               >
                 <option value="">Sélectionner</option>
@@ -186,14 +148,12 @@ export default function Page() {
               </select>
             </div>
 
-            <div className="space-y-1">
-              <label className="text-xs text-gray-600">N° chantier</label>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">N° chantier</label>
               <select
-                className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm outline-none disabled:opacity-50 focus:ring-2 focus:ring-red-400"
+                className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm outline-none disabled:opacity-50 focus:ring-2 focus:ring-red-500 focus:border-red-500"
                 value={filters.num ?? ""}
-                onChange={(e) =>
-                  setFilters((f) => ({ ...f, num: e.target.value || null }))
-                }
+                onChange={(e) => setFilters((f) => ({ ...f, num: e.target.value || null }))}
                 disabled={!filters.chantier}
               >
                 <option value="">Sélectionner</option>
@@ -204,45 +164,49 @@ export default function Page() {
             </div>
           </div>
         </div>
-      </section>
 
-      {/* Cartes */}
-      <section className="mx-auto max-w-7xl px-4 py-6">
-        <div className="grid gap-5 md:grid-cols-2">
+        {/* Tableau principal */}
+        <div className="rounded-xl border border-gray-200 bg-white p-6 mb-8 shadow-sm">
+          <h2 className="mb-4 text-lg font-semibold text-gray-900">Derniers imports (10 maximum)</h2>
+          <DashboardTable filters={{ etab: filters.etab || undefined, chantier: filters.chantier || undefined, num: filters.num || undefined }} />
+        </div>
+
+        {/* Cartes */}
+        <div className="grid gap-6 md:grid-cols-2 mb-8">
           {/* Dernier import */}
-          <div className="rounded-2xl border border-gray-200 bg-white p-4">
-            <div className="mb-2 flex items-center justify-between">
-              <h3 className="text-base font-semibold">Dernier import</h3>
+          <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm hover:shadow-md transition-shadow">
+            <div className="mb-4 flex items-center justify-between">
+              <h3 className="text-base font-semibold text-gray-900">Dernier import</h3>
               <span className="text-xs text-gray-500">scope: filtres</span>
             </div>
-            <dl className="grid grid-cols-2 gap-3 text-sm">
+            <dl className="grid grid-cols-2 gap-3 text-sm mb-4">
               <div>
-                <dt className="text-gray-600">Date</dt>
-                <dd className="font-medium">{fmtDateTime(lastImport?.at)}</dd>
+                <dt className="text-gray-600 mb-1">Date</dt>
+                <dd className="font-medium text-gray-900">{fmtDateTime(lastImport?.at)}</dd>
               </div>
               <div>
-                <dt className="text-gray-600">Fichier</dt>
-                <dd className="truncate">{lastImport?.fileName ?? "–"}</dd>
+                <dt className="text-gray-600 mb-1">Fichier</dt>
+                <dd className="truncate text-gray-900">{lastImport?.fileName ?? "–"}</dd>
               </div>
               <div>
-                <dt className="text-gray-600">Importé par</dt>
-                <dd>{lastImport?.user ?? "–"}</dd>
+                <dt className="text-gray-600 mb-1">Importé par</dt>
+                <dd className="text-gray-900">{lastImport?.user ?? "Système"}</dd>
               </div>
               <div>
-                <dt className="text-gray-600">Lignes</dt>
-                <dd>{lastImport?.rowCount ?? "–"}</dd>
+                <dt className="text-gray-600 mb-1">Lignes</dt>
+                <dd className="font-semibold text-gray-900">{lastImport?.rowCount ?? "–"}</dd>
               </div>
             </dl>
-            <div className="mt-4 flex gap-3">
+            <div className="flex gap-3">
               <Link
                 href="/import"
-                className="rounded-xl bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-700"
+                className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 transition"
               >
                 Accéder au dernier import
               </Link>
               <Link
                 href="/export"
-                className="rounded-xl border border-gray-300 px-3 py-2 text-sm text-black hover:bg-gray-50"
+                className="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition"
               >
                 Aller à l'export
               </Link>
@@ -250,41 +214,59 @@ export default function Page() {
           </div>
 
           {/* Tâches en attente */}
-          <div className="rounded-2xl border border-gray-200 bg-white p-4">
-            <h3 className="mb-2 text-base font-semibold">Tâches en attente</h3>
-            <ul className="space-y-2 text-sm">
-              <li className="flex items-center justify-between rounded-xl bg-gray-50 px-3 py-2">
-                <span>Codes déchet à renseigner</span>
-                <span className="font-semibold">{outstanding.missingCodes}</span>
+          <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm hover:shadow-md transition-shadow">
+            <h3 className="mb-4 text-base font-semibold text-gray-900">Tâches en attente</h3>
+            <ul className="space-y-3 mb-4 text-sm">
+              <li className="flex items-center justify-between rounded-lg bg-red-50 px-4 py-3 border border-red-100">
+                <span className="text-gray-700">Codes déchet à renseigner</span>
+                <span className="font-bold text-red-600">{outstanding.missingCodes}</span>
               </li>
-              <li className="flex items-center justify-between rounded-xl bg-gray-50 px-3 py-2">
-                <span>Chantiers incomplets / non saisis</span>
-                <span className="font-semibold">{outstanding.incompleteChantiers}</span>
+              <li className="flex items-center justify-between rounded-lg bg-orange-50 px-4 py-3 border border-orange-100">
+                <span className="text-gray-700">Chantiers incomplets / non saisis</span>
+                <span className="font-bold text-orange-600">{outstanding.incompleteChantiers}</span>
               </li>
             </ul>
-
-            <div className="mt-4 flex flex-wrap gap-3">
+            <div className="flex flex-wrap gap-3">
               <Link
                 href="/controle"
-                className="rounded-xl bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-700"
+                className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 transition"
               >
                 Aller au Contrôle
               </Link>
               <Link
                 href="/import"
-                className="rounded-xl border border-gray-300 px-3 py-2 text-sm text-black hover:bg-gray-50"
+                className="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition"
               >
                 Aller à l'Import
               </Link>
             </div>
           </div>
         </div>
+
+        {/* Section À propos */}
+        <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+          <h2 className="mb-4 text-lg font-semibold text-gray-900">À propos de FluxMat</h2>
+          <div className="text-sm text-gray-600 space-y-2">
+            <p>
+              <strong className="text-gray-900">FluxMat</strong> est une application de gestion des flux de matériaux 
+              pour les chantiers Eiffage. Elle permet de :
+            </p>
+            <ul className="list-disc list-inside space-y-1 ml-2">
+              <li>Importer les données de dépenses depuis les fichiers PRC/PIDOT</li>
+              <li>Corriger automatiquement ou manuellement les codes déchets manquants</li>
+              <li>Suivre l'état des chantiers et leurs imports récents</li>
+              <li>Exporter des registres conformes aux réglementations</li>
+              <li>Gérer les exutoires et la traçabilité des matériaux</li>
+            </ul>
+            <p className="mt-3">
+              Utilisez les filtres ci-dessus pour cibler un établissement spécifique et consulter 
+              les derniers imports de vos chantiers.
+            </p>
+          </div>
+        </div>
       </section>
 
-      {/* Footer discret */}
-      <footer className="mx-auto max-w-7xl px-4 pb-10 pt-2 text-xs text-gray-500">
-        © {new Date().getFullYear()} — FluxMat
-      </footer>
+      <Footer />
     </main>
   );
 }
