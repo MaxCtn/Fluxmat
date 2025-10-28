@@ -12,7 +12,14 @@ function groupBy<T, K>(items: T[], fn: (i: T) => K) {
 }
 
 function exutoireName(row: any): string {
-  return row['libelle_fournisseur'] || row['Libellé Fournisseur'] || row['exutoire'] || row['Code Fournisseur'] || row['fournisseur'] || '—';
+  // Essayer plusieurs sources pour le nom de l'exutoire
+  return row['destinataire.raisonSociale'] 
+    || row['libelle_fournisseur'] 
+    || row['Libellé Fournisseur'] 
+    || row['exutoire'] 
+    || row['Code Fournisseur'] 
+    || row['fournisseur']
+    || '—';
 }
 
 function formatDate(dateValue: any): string {
@@ -43,7 +50,12 @@ export default function ExutoireSummary({ sourceRows, onRowsChange }: ExutoireSu
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [rows, setRows] = useState(sourceRows);
 
-  const grouped = useMemo(() => groupBy(rows, exutoireName), [rows]);
+  const grouped = useMemo(() => {
+    const groupedData = groupBy(rows, exutoireName);
+    // Tri par ordre alphabétique des noms de carrières
+    const sortedEntries = [...groupedData.entries()].sort(([a], [b]) => a.localeCompare(b));
+    return new Map(sortedEntries);
+  }, [rows]);
   
   const entries = useMemo(() => {
     let filtered = [...grouped.entries()];
