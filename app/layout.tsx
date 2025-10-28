@@ -1,7 +1,7 @@
 import "./globals.css";
 
 export const metadata = {
-  title: "FluxMat — MVP (onglets + DB)",
+  title: "FluxMat",
   description: "Import → Contrôle → Export + synthèse par exutoire et base Supabase",
 };
 
