@@ -17,8 +17,8 @@ export async function GET(request: Request) {
     // Requête sur depenses_brutes avec informations du dernier import
     let query = supabase
       .from('depenses_brutes')
-      .select('libelle_fournisseur, code_chantier, date_operation, created_at')
-      .order('created_at', { ascending: false })
+      .select('libelle_fournisseur, code_chantier, date_operation, date_chargement')
+      .order('date_chargement', { ascending: false })
       .limit(100);
 
     if (codeEntite) {
@@ -44,7 +44,7 @@ export async function GET(request: Request) {
           exutoire: row.libelle_fournisseur || 'Non défini',
           numChantier: row.code_chantier || 'N/A',
           date: row.date_operation || 'N/A',
-          dateLastImport: row.created_at ? new Date(row.created_at).toISOString() : 'N/A'
+          dateLastImport: row.date_chargement ? new Date(row.date_chargement).toISOString() : 'N/A'
         });
       }
     }
