@@ -12,7 +12,7 @@ export default function TabsNav({ active, onChange }:{ active:TabKey; onChange:(
       {item('import','Import Dépenses')}
       {item('controle','Contrôle des lignes')}
       {item('export','Export')}
-      {item('database','📊 Base de Données')}
+      {item('database','📊 Tableau de Bord')}
     </nav>
   );
 }

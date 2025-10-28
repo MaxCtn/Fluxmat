@@ -1,18 +1,21 @@
 -- =========================================================
--- FLUXMAT — SCRIPT "COPIER/COLLER" SUPABASE (Postgres 15)
--- - Corrige 42P17 (row_hash via trigger au lieu de generated)
--- - Premier REFRESH non-CONCURRENTLY, suivants en CONCURRENTLY
--- - Policies avec 'authenticated'
+-- FLUXMAT — SCRIPT COMPLET (Supabase / Postgres 15)
+-- - Schéma "fluxmat" (BRUTE + PROPRE)
+-- - Extensions dans le schéma "extensions"
+-- - Triggers pour row_hash (évite 42P17)
+-- - unaccent() qualifié => extensions.unaccent(...)
+-- - Filtres (exutoire / nature / sens) + RPC
 -- =========================================================
 
--- Extensions utiles
-create extension if not exists pg_trgm;
-create extension if not exists unaccent;
+-- 0) Extensions (dans le schéma 'extensions' de Supabase)
+create schema if not exists extensions;
+create extension if not exists unaccent with schema extensions;
+create extension if not exists pg_trgm with schema extensions;
 
--- Schéma dédié
+-- 1) Schéma métier
 create schema if not exists fluxmat;
 
--- Enums
+-- 2) Types / Enums
 do $$ begin
   if not exists (select 1 from pg_type where typname = 'nature_gestion_enum') then
     create type fluxmat.nature_gestion_enum as enum (
@@ -30,14 +33,14 @@ do $$ begin
   end if;
 end $$;
 
--- Helpers de classification (IMMUTABLE)
+-- 3) Helpers de classification (IMMUTABLE)
 create or replace function fluxmat.f_guess_nature_gestion(lbl text)
 returns fluxmat.nature_gestion_enum
 language sql immutable as $$
   select case
-    when lbl ilike '%02-%' or lbl ilike '%Matériaux%'           then '02-Matériaux'::fluxmat.nature_gestion_enum
-    when lbl ilike '%03-%' or lbl ilike '%Matériel interne%'    then '03-Matériel interne'::fluxmat.nature_gestion_enum
-    when lbl ilike '%04-%' or lbl ilike '%Matériel externe%'    then '04-Matériel externe'::fluxmat.nature_gestion_enum
+    when lbl ilike '%02-%' or lbl ilike '%Matériaux%'            then '02-Matériaux'::fluxmat.nature_gestion_enum
+    when lbl ilike '%03-%' or lbl ilike '%Matériel interne%'     then '03-Matériel interne'::fluxmat.nature_gestion_enum
+    when lbl ilike '%04-%' or lbl ilike '%Matériel externe%'     then '04-Matériel externe'::fluxmat.nature_gestion_enum
     when lbl ilike '%07-%' or lbl ilike '%Sous-traitants%' or lbl ilike '%Presta%' then '07-Sous-traitants/Presta'::fluxmat.nature_gestion_enum
     else null
   end;
@@ -53,7 +56,7 @@ language sql immutable as $$
   end;
 $$;
 
--- Alias d'exutoire (normalisation optionnelle)
+-- 4) Référentiel d’alias d’exutoires + canonisation
 create table if not exists fluxmat.exutoire_alias (
   id bigserial primary key,
   alias text not null,
@@ -65,13 +68,15 @@ create or replace function fluxmat.f_canonical_exutoire(nom text)
 returns text
 language sql stable as $$
   select coalesce(
-    (select exutoire_canonique from fluxmat.exutoire_alias
-      where unaccent(lower(alias)) = unaccent(lower(nom)) limit 1),
+    (select exutoire_canonique
+     from fluxmat.exutoire_alias
+     where extensions.unaccent(lower(alias)) = extensions.unaccent(lower(nom))
+     limit 1),
     nom
   );
 $$;
 
--- Table BRUTE (import Excel direct)
+-- 5) Table BRUTE (import Excel direct)
 create table if not exists fluxmat.depenses_brutes (
   id                bigserial primary key,
 
@@ -140,14 +145,14 @@ create table if not exists fluxmat.depenses_brutes (
   date_traitement_recalage  timestamptz,
   statut_rapprochement_facture text,
 
-  -- plus de GENERATED ici (évite 42P17)
+  -- plus de GENERATED (évite 42P17)
   row_hash           text,
 
   created_at         timestamptz not null default now(),
   updated_at         timestamptz not null default now()
 );
 
--- Trigger updated_at
+-- 6) Triggers génériques
 create or replace function fluxmat.tg_set_updated_at()
 returns trigger language plpgsql as $$
 begin
@@ -160,7 +165,7 @@ create trigger trg_depenses_brutes_updated
 before update on fluxmat.depenses_brutes
 for each row execute function fluxmat.tg_set_updated_at();
 
--- Trigger pour calculer row_hash (INSERT/UPDATE)
+-- Calcul du hash (INSERT/UPDATE)
 create or replace function fluxmat.tg_set_row_hash()
 returns trigger language plpgsql as $$
 declare
@@ -181,7 +186,7 @@ create trigger trg_depenses_brutes_hash
 before insert or update on fluxmat.depenses_brutes
 for each row execute function fluxmat.tg_set_row_hash();
 
--- Overrides (corrections manuelles)
+-- 7) Corrections manuelles (overrides)
 create table if not exists fluxmat.depenses_overrides (
   depense_id   bigint primary key references fluxmat.depenses_brutes(id) on delete cascade,
   exutoire     text,
@@ -198,7 +203,7 @@ create trigger trg_overrides_updated
 before update on fluxmat.depenses_overrides
 for each row execute function fluxmat.tg_set_updated_at();
 
--- Mapping regex -> code déchet
+-- 8) Mapping regex -> code déchet
 create table if not exists fluxmat.code_dechet_mapping (
   id bigserial primary key,
   motif_regex text not null,
@@ -207,7 +212,7 @@ create table if not exists fluxmat.code_dechet_mapping (
   unique (motif_regex, code_dechet)
 );
 
--- MV “PROPRE”
+-- 9) Materialized View “PROPRE”
 drop materialized view if exists fluxmat.mv_depenses_propres;
 
 create materialized view fluxmat.mv_depenses_propres as
@@ -221,9 +226,9 @@ with base as (
 )
 select
   b.id as brute_id,
-  coalesce(o.exutoire,       b.exutoire_guess)        as exutoire,
-  coalesce(o.nature_gestion, b.nature_gestion_guess)  as nature_gestion,
-  coalesce(o.sens_flux,      b.sens_flux_guess)        as sens_flux,
+  coalesce(o.exutoire,       b.exutoire_guess)       as exutoire,
+  coalesce(o.nature_gestion, b.nature_gestion_guess) as nature_gestion,
+  coalesce(o.sens_flux,      b.sens_flux_guess)      as sens_flux,
 
   coalesce(
     o.code_dechet,
@@ -252,7 +257,7 @@ from base b
 left join fluxmat.depenses_overrides o on o.depense_id = b.id
 with no data;
 
--- Index (dont unique pour refresh CONCURRENTLY après 1er refresh)
+-- Index requis pour REFRESH CONCURRENTLY (unique couvrant toutes les lignes)
 create unique index if not exists mv_depenses_propres_brute_id_uidx
 on fluxmat.mv_depenses_propres (brute_id);
 
@@ -262,7 +267,7 @@ create index if not exists mv_propres_sens_idx     on fluxmat.mv_depenses_propre
 create index if not exists mv_propres_date_idx     on fluxmat.mv_depenses_propres (date_piece);
 create index if not exists mv_propres_montant_idx  on fluxmat.mv_depenses_propres (montant);
 
--- Vue projetée pour l’onglet
+-- 10) Vue prête pour l’onglet “FluxMat”
 create or replace view fluxmat.v_fluxmat as
 select
   brute_id as id,
@@ -278,7 +283,7 @@ select
   unite, quantite, pu, montant
 from fluxmat.mv_depenses_propres;
 
--- RPC: liste filtrée
+-- 11) RPC: liste filtrée (exutoire -> nature -> sens + recherche + dates)
 create or replace function fluxmat.api_fluxmat_list(
   exutoires text[] default null,
   natures   fluxmat.nature_gestion_enum[] default null,
@@ -298,89 +303,95 @@ language sql stable as $$
     and (dmax is null or v.date_piece <  dmax + 1)
     and (
       search is null
-      or unaccent(lower(v.libelle_ressource))  like unaccent(lower('%'||search||'%'))
-      or unaccent(lower(v.libelle_fournisseur)) like unaccent(lower('%'||search||'%'))
+      or extensions.unaccent(lower(v.libelle_ressource))   like extensions.unaccent(lower('%'||search||'%'))
+      or extensions.unaccent(lower(v.libelle_fournisseur)) like extensions.unaccent(lower('%'||search||'%'))
     )
   order by coalesce(v.date_piece, date '1900-01-01') desc, v.id desc;
 $$;
 
--- RPC: listes de filtres (exutoires / natures / sens + compteurs)
+-- 12) RPC: listes de filtres (exutoires / natures / sens) SANS agrégats imbriqués
 create or replace function fluxmat.api_fluxmat_filters()
 returns jsonb
 language sql stable as $$
   select jsonb_build_object(
     'exutoires',
       coalesce((
-        select jsonb_agg(jsonb_build_object('value',exutoire,'count',c))
+        select jsonb_agg(jsonb_build_object('value', exutoire, 'count', c) order by exutoire)
         from (
           select exutoire, count(*) c
           from fluxmat.v_fluxmat
+          where exutoire is not null
           group by exutoire
-          order by exutoire
-        ) t
+        ) t1
       ), '[]'::jsonb),
     'natures',
-      (
-        select jsonb_agg(jsonb_build_object('value',nature_gestion::text,'count',count(*)) order by 1)
-        from fluxmat.v_fluxmat
-        group by nature_gestion
-      ),
+      coalesce((
+        select jsonb_agg(jsonb_build_object('value', val, 'count', c) order by val)
+        from (
+          select nature_gestion::text as val, count(*) c
+          from fluxmat.v_fluxmat
+          where nature_gestion is not null
+          group by nature_gestion
+        ) t2
+      ), '[]'::jsonb),
     'sens',
-      (
-        select jsonb_agg(jsonb_build_object('value',sens_flux::text,'count',count(*)) order by 1)
-        from fluxmat.v_fluxmat
-        group by sens_flux
-      )
+      coalesce((
+        select jsonb_agg(jsonb_build_object('value', val, 'count', c) order by val)
+        from (
+          select sens_flux::text as val, count(*) c
+          from fluxmat.v_fluxmat
+          where sens_flux is not null
+          group by sens_flux
+        ) t3
+      ), '[]'::jsonb)
   );
 $$;
 
--- Index BRUTE
+-- 13) Index BRUTE (perfs ingestion/recherche)
 create index if not exists brutes_row_hash_idx on fluxmat.depenses_brutes(row_hash);
 create index if not exists brutes_lib_fourn_trgm on fluxmat.depenses_brutes using gin (libelle_fournisseur gin_trgm_ops);
 create index if not exists brutes_lib_nat_gestion_idx on fluxmat.depenses_brutes(libelle_nature_gestion);
 create index if not exists brutes_lib_ress_trgm on fluxmat.depenses_brutes using gin (libelle_ressource gin_trgm_ops);
 create index if not exists brutes_montant_idx on fluxmat.depenses_brutes(montant);
+create index if not exists brutes_date_idx on fluxmat.depenses_brutes(date_piece);
 
--- RLS
+-- 14) RLS (lecture = authenticated ; écriture simple = authenticated)
 alter table fluxmat.depenses_brutes       enable row level security;
 alter table fluxmat.depenses_overrides    enable row level security;
 alter table fluxmat.exutoire_alias        enable row level security;
 alter table fluxmat.code_dechet_mapping   enable row level security;
 
--- Lecture pour utilisateurs authentifiés
 drop policy if exists p_sel_brutes on fluxmat.depenses_brutes;
 create policy p_sel_brutes on fluxmat.depenses_brutes
 for select to authenticated using (true);
+
+drop policy if exists p_all_brutes on fluxmat.depenses_brutes;
+create policy p_all_brutes on fluxmat.depenses_brutes
+for all to authenticated using (true) with check (true);
 
 drop policy if exists p_sel_overrides on fluxmat.depenses_overrides;
 create policy p_sel_overrides on fluxmat.depenses_overrides
 for select to authenticated using (true);
 
-drop policy if exists p_sel_alias on fluxmat.exutoire_alias;
-create policy p_sel_alias on fluxmat.exutoire_alias
-for select to authenticated using (true);
-
-drop policy if exists p_sel_mapping on fluxmat.code_dechet_mapping;
-create policy p_sel_mapping on fluxmat.code_dechet_mapping
-for select to authenticated using (true);
-
--- Écriture (simple) pour authenticated (tu pourras durcir après)
-drop policy if exists p_all_brutes on fluxmat.depenses_brutes;
-create policy p_all_brutes on fluxmat.depenses_brutes
-for all to authenticated using (true) with check (true);
-
 drop policy if exists p_all_overrides on fluxmat.depenses_overrides;
 create policy p_all_overrides on fluxmat.depenses_overrides
 for all to authenticated using (true) with check (true);
+
+drop policy if exists p_sel_alias on fluxmat.exutoire_alias;
+create policy p_sel_alias on fluxmat.exutoire_alias
+for select to authenticated using (true);
 
 drop policy if exists p_all_alias on fluxmat.exutoire_alias;
 create policy p_all_alias on fluxmat.exutoire_alias
 for all to authenticated using (true) with check (true);
 
+drop policy if exists p_sel_mapping on fluxmat.code_dechet_mapping;
+create policy p_sel_mapping on fluxmat.code_dechet_mapping
+for select to authenticated using (true);
+
 drop policy if exists p_all_mapping on fluxmat.code_dechet_mapping;
 create policy p_all_mapping on fluxmat.code_dechet_mapping
 for all to authenticated using (true) with check (true);
 
--- ===== Premier peuplement de la MV =====
--- ⚠️ Le premier refresh NE DOIT PAS être CONCURRENTLY.
+-- 15) Premier peuplement de la MV (⚠️ sans CONCURRENTLY la toute première fois)
 refresh materialized view fluxmat.mv_depenses_propres;

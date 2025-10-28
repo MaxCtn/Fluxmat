@@ -1,33 +1,48 @@
-import { createClient } from '@supabase/supabase-js';
+// repo/lib/supabaseServer.ts
+import 'server-only';
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
-export function getSupabaseServer(){
+// ⚠️ Variables d'env attendues (ne mets jamais la service key côté client)
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+
+let _admin: SupabaseClient | null = null;
+
+/** Client admin (service role) – usage exclusif côté serveur (API routes / RSC). */
+function getSbAdmin(): SupabaseClient {
+  if (!SUPABASE_URL) {
+    throw new Error('NEXT_PUBLIC_SUPABASE_URL manquante. Configure .env.local');
+  }
+  if (!SERVICE_ROLE_KEY) {
+    throw new Error('SUPABASE_SERVICE_ROLE_KEY manquante. Configure .env.local');
+  }
+
+  if (_admin) return _admin;
+
+  _admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
+    auth: { persistSession: false, autoRefreshToken: false },
+    global: { headers: { 'x-application-name': 'fluxmat-server' } },
+  });
+
+  return _admin;
+}
+
+/** Export de getSbAdmin pour usage direct. */
+export { getSbAdmin };
+
+/** Alias pour compatibilité avec le code existant. */
+export function getSupabaseServer(): SupabaseClient {
+  return getSbAdmin();
+}
+
+/** Sanity check optionnel pour tes routes (à supprimer si inutile). */
+export async function pingSupabase() {
+  const sb = getSbAdmin();
+  // petite requête inoffensive pour vérifier la connexion
   try {
-    // Utiliser les variables d'environnement Vercel
-    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-    
-    if (!url || !serviceKey) {
-      console.error('[SUPABASE] Variables d\'environnement manquantes:', {
-        url: !!url,
-        serviceKey: !!serviceKey
-      });
-      return null;
-    }
-
-    console.log('[SUPABASE] Tentative de connexion...');
-    console.log('[SUPABASE] URL:', url);
-    console.log('[SUPABASE] Key présent:', serviceKey ? 'OUI' : 'NON');
-    
-    const supabase = createClient(url, serviceKey, { 
-      auth: { persistSession: false },
-      db: { schema: 'public' },
-      global: { headers: { 'x-my-custom-header': 'my-app-name' } }
-    });
-    
-    console.log('[SUPABASE] Client Supabase créé avec succès');
-    return supabase;
-  } catch (error) {
-    console.error('[SUPABASE] Erreur lors de la création du client:', error);
-    return null;
+    const { error } = await sb.rpc('pg_sleep', { seconds: 0 });
+    return !error;
+  } catch {
+    return false;
   }
 }
