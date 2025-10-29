@@ -34,17 +34,29 @@ export async function GET(request: Request) {
     }
 
     // Compter les chantiers incomplets (chantiers distincts avec des lignes sans code_dechet)
+    // Utiliser une sous-requête pour compter les chantiers distincts
     let chantiersQuery = supabase
       .from('registre_flux')
-      .select('code_chantier', { count: 'exact' })
+      .select('code_chantier, libelle_chantier')
       .or('code_dechet.is.null,code_dechet.eq.')
       .not('code_chantier', 'is', null);
 
     if (etab) {
       chantiersQuery = chantiersQuery.eq('code_entite', etab);
     }
+    if (chantier) {
+      chantiersQuery = chantiersQuery.ilike('code_chantier', `%${chantier}%`);
+    }
 
-    const { count: incompleteChantiers, error: chantiersError } = await chantiersQuery;
+    const { data: chantiersData, error: chantiersError } = await chantiersQuery;
+    
+    // Compter les chantiers distincts
+    const uniqueChantiers = new Set<string>();
+    chantiersData?.forEach(row => {
+      const key = row.code_chantier || row.libelle_chantier || '';
+      if (key) uniqueChantiers.add(key);
+    });
+    const incompleteChantiers = uniqueChantiers.size;
 
     if (chantiersError) {
       console.error('[DASHBOARD/OUTSTANDING] Erreur chantiers:', chantiersError);
