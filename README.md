@@ -1,8 +1,8 @@
 <div align="center">
 
-# 📊 Fluxmat
+![Eiffage Logo](https://github.com/MaxCtn/Fluxmat/raw/main/public/images/logoclair.png)
 
-![Eiffage Logo](public/images/logoclair.png)
+# 📊 Fluxmat
 
 **Application de gestion des flux matières et déchets pour Eiffage**
 
@@ -181,7 +181,7 @@ Pour toute question ou support, contactez l'équipe de développement.
 
 **Développé avec ❤️ pour Eiffage**
 
-![Eiffage](public/images/eiffage.webp)
+![Eiffage](https://github.com/MaxCtn/Fluxmat/raw/main/public/images/eiffage.webp)
 
 </div>
 
