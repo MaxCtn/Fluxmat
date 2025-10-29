@@ -1,5 +1,5 @@
 'use client';
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 
 function groupBy<T, K>(items: T[], fn: (i: T) => K) {
   const m = new Map<K, T[]>();
@@ -49,6 +49,11 @@ export default function ExutoireSummary({ sourceRows, onRowsChange }: ExutoireSu
   const [editingRow, setEditingRow] = useState<any | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [rows, setRows] = useState(sourceRows);
+
+  // Synchroniser rows avec sourceRows quand sourceRows change
+  useEffect(() => {
+    setRows(sourceRows);
+  }, [sourceRows]);
 
   const grouped = useMemo(() => {
     const groupedData = groupBy(rows, exutoireName);

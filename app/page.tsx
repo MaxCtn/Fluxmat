@@ -222,24 +222,32 @@ export default function Page() {
               <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100">Dernier import</h3>
               <span className="text-xs text-gray-500 dark:text-gray-400">scope: filtres</span>
             </div>
-            <dl className="grid grid-cols-2 gap-3 text-sm mb-4">
-              <div>
-                <dt className="text-gray-600 dark:text-gray-400 mb-1">Date</dt>
-                <dd className="font-medium text-gray-900 dark:text-gray-100">{fmtDateTime(lastImport?.at)}</dd>
+            {lastImport ? (
+              <dl className="grid grid-cols-2 gap-3 text-sm mb-4">
+                <div>
+                  <dt className="text-gray-600 dark:text-gray-400 mb-1">Date</dt>
+                  <dd className="font-medium text-gray-900 dark:text-gray-100">{fmtDateTime(lastImport.at)}</dd>
+                </div>
+                <div>
+                  <dt className="text-gray-600 dark:text-gray-400 mb-1">Chantier</dt>
+                  <dd className="truncate text-gray-900 dark:text-gray-100">{lastImport.fileName ?? "–"}</dd>
+                </div>
+                <div>
+                  <dt className="text-gray-600 dark:text-gray-400 mb-1">Importé par</dt>
+                  <dd className="text-gray-900 dark:text-gray-100">{lastImport.user ?? "Système"}</dd>
+                </div>
+                {lastImport.rowCount && (
+                  <div>
+                    <dt className="text-gray-600 dark:text-gray-400 mb-1">Lignes</dt>
+                    <dd className="font-semibold text-gray-900 dark:text-gray-100">{lastImport.rowCount}</dd>
+                  </div>
+                )}
+              </dl>
+            ) : (
+              <div className="mb-4 text-sm text-gray-500 dark:text-gray-400">
+                Aucun import récent trouvé
               </div>
-              <div>
-                <dt className="text-gray-600 dark:text-gray-400 mb-1">Fichier</dt>
-                <dd className="truncate text-gray-900 dark:text-gray-100">{lastImport?.fileName ?? "–"}</dd>
-              </div>
-              <div>
-                <dt className="text-gray-600 dark:text-gray-400 mb-1">Importé par</dt>
-                <dd className="text-gray-900 dark:text-gray-100">{lastImport?.user ?? "Système"}</dd>
-              </div>
-              <div>
-                <dt className="text-gray-600 dark:text-gray-400 mb-1">Lignes</dt>
-                <dd className="font-semibold text-gray-900 dark:text-gray-100">{lastImport?.rowCount ?? "–"}</dd>
-              </div>
-            </dl>
+            )}
             <div className="flex gap-3">
               <Link
                 href="/import"

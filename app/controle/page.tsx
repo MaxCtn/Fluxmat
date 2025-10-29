@@ -78,7 +78,12 @@ export default function ControlePage() {
       const data = await res.json();
       
       if (!res.ok || data.error) {
-        throw new Error(data.error || 'Erreur lors de la sauvegarde');
+        // Afficher un message plus informatif selon le type d'erreur
+        let errorMessage = data.error || 'Erreur lors de la sauvegarde';
+        if (data.type === 'missing_env_vars') {
+          errorMessage = 'Configuration Supabase manquante. Veuillez configurer les variables d\'environnement dans .env.local';
+        }
+        throw new Error(errorMessage);
       }
 
       setModalState({ 

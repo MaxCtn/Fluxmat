@@ -6,10 +6,16 @@ import Footer from '../../components/Footer';
 import Papa from 'papaparse';
 import { saveAs } from '../../components/saveAsCsv';
 import { useRouter } from 'next/navigation';
+import Modal from '../../components/Modal';
 
 export default function ExportPage() {
   const router = useRouter();
   const [registre, setRegistre] = useState<any[]>([]);
+  const [modalState, setModalState] = useState<{ isOpen: boolean; message: string; inserted?: number; error?: string }>({ 
+    isOpen: false, 
+    message: '' 
+  });
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     const saved = sessionStorage.getItem('fluxmat_data');
@@ -20,16 +26,44 @@ export default function ExportPage() {
   }, []);
 
   async function saveToDB() {
-    const res = await fetch('/api/db/save-simple', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ rows: registre })
-    });
-    const data = await res.json();
-    if (data.error) {
-      alert(`Erreur: ${data.error}`);
-    } else {
-      alert(`Enregistré: ${data.inserted} lignes`);
+    setLoading(true);
+    try {
+      const res = await fetch('/api/db/save-simple', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rows: registre })
+      });
+      const data = await res.json();
+      if (data.error) {
+        setModalState({
+          isOpen: true,
+          message: `Erreur lors de la sauvegarde`,
+          error: data.error
+        });
+      } else {
+        setModalState({
+          isOpen: true,
+          message: `Export réussi !`,
+          inserted: data.inserted || 0
+        });
+      }
+    } catch (err: any) {
+      setModalState({
+        isOpen: true,
+        message: `Erreur lors de la sauvegarde`,
+        error: err.message || 'Erreur inconnue'
+      });
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function handleModalClose(shouldRedirect = false) {
+    const hadSuccess = modalState.inserted !== undefined && modalState.inserted > 0;
+    setModalState({ isOpen: false, message: '' });
+    if (shouldRedirect && hadSuccess) {
+      // Rediriger vers le tableau de bord après un succès
+      router.push('/');
     }
   }
 
@@ -66,13 +100,18 @@ export default function ExportPage() {
             <button 
               className="rounded-lg border-2 border-blue-300 bg-blue-50 px-4 py-3 text-sm font-medium text-blue-800 hover:bg-blue-100 transition shadow-sm hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed" 
               onClick={saveToDB} 
-              disabled={!registre.length}
+              disabled={!registre.length || loading}
             >
-              💾 Sauvegarder dans Supabase
+              {loading ? '⏳ Enregistrement...' : '💾 Sauvegarder dans Supabase'}
             </button>
             <button
               className="rounded-lg border-2 border-green-300 bg-green-50 px-4 py-3 text-sm font-medium text-green-800 hover:bg-green-100 transition shadow-sm hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
-              onClick={() => alert('Fonctionnalité Export GDM à implémenter')}
+              onClick={() => {
+                setModalState({
+                  isOpen: true,
+                  message: 'Fonctionnalité Export GDM à implémenter'
+                });
+              }}
               disabled={!registre.length}
             >
               📤 Export vers GDM
@@ -97,6 +136,62 @@ export default function ExportPage() {
       </section>
 
       <Footer />
+
+      {/* Modal de confirmation/erreur */}
+      <Modal 
+        isOpen={modalState.isOpen} 
+        onClose={handleModalClose}
+        title={modalState.error ? 'Erreur' : 'Export'}
+      >
+        <div className="flex flex-col gap-4">
+          <div className="flex items-start gap-3">
+            {modalState.error ? (
+              <svg className="w-6 h-6 text-red-400 flex-shrink-0 mt-1" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+              </svg>
+            ) : (
+              <svg className="w-6 h-6 text-green-400 flex-shrink-0 mt-1" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+              </svg>
+            )}
+            <div className="flex-1">
+              <p className="text-base leading-relaxed">{modalState.message}</p>
+              {modalState.inserted !== undefined && (
+                <div className="mt-3 bg-white/5 rounded-lg p-3 border border-white/10">
+                  <p className="text-sm text-gray-300">
+                    <span className="text-green-400 font-semibold">{modalState.inserted}</span> lignes insérées dans la base de données
+                  </p>
+                </div>
+              )}
+              {modalState.error && (
+                <div className="mt-3 bg-red-500/10 rounded-lg p-3 border border-red-500/20">
+                  <p className="text-sm text-red-300">{modalState.error}</p>
+                </div>
+              )}
+            </div>
+          </div>
+          
+          <div className="flex justify-end gap-3 mt-6">
+            {modalState.inserted !== undefined && (
+              <button
+                onClick={() => {
+                  handleModalClose(true);
+                  router.push('/');
+                }}
+                className="px-6 py-3 bg-cyan-500 hover:bg-cyan-400 text-white font-medium rounded-lg transition-colors shadow-lg hover:shadow-xl"
+              >
+                Voir le tableau de bord
+              </button>
+            )}
+            <button
+              onClick={() => handleModalClose(false)}
+              className="px-6 py-3 bg-gray-600 hover:bg-gray-500 text-white font-medium rounded-lg transition-colors shadow-lg hover:shadow-xl min-w-[100px]"
+            >
+              {modalState.inserted !== undefined ? 'Fermer' : 'OK'}
+            </button>
+          </div>
+        </div>
+      </Modal>
     </main>
   );
 }

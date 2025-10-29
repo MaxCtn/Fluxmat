@@ -5,7 +5,11 @@ export async function POST(req: NextRequest) {
   try {
     const supabase = getSupabaseServer();
     if (!supabase) {
-      return NextResponse.json({ error: 'Supabase non configuré' }, { status: 500 });
+      console.error('[PENDING-IMPORTS/SAVE] Supabase non configuré - variables d\'environnement manquantes');
+      return NextResponse.json({ 
+        error: 'Supabase non configuré. Veuillez configurer NEXT_PUBLIC_SUPABASE_URL et SUPABASE_SERVICE_ROLE_KEY dans votre fichier .env.local',
+        type: 'missing_env_vars'
+      }, { status: 500 });
     }
 
     const body = await req.json();

@@ -66,7 +66,17 @@ export default function ImportPage() {
     return Array.from(agencesSet).sort();
   }, [registre, controle]);
 
-  // Filtrer les lignes selon les filtres
+  // Toutes les lignes (pour les compteurs - toujours affichées sans filtres)
+  const toutesLesLignes = useMemo(() => {
+    return [...registre, ...controle];
+  }, [registre, controle]);
+
+  // Compteurs calculés à partir de toutes les lignes (non filtrées)
+  const totalLignes = toutesLesLignes.length;
+  const lignesValidees = toutesLesLignes.filter(r => r.codeDechet && r.codeDechet.trim().length === 6).length;
+  const lignesATraiter = toutesLesLignes.filter(r => !r.codeDechet || r.codeDechet.trim() === '' || r.codeDechet.length !== 6).length;
+
+  // Filtrer les lignes selon les filtres (uniquement pour le tableau en bas)
   const lignesFiltrees = useMemo(() => {
     let filtered = [...registre, ...controle];
     
@@ -87,10 +97,6 @@ export default function ImportPage() {
     
     return filtered;
   }, [registre, controle, filterAgence, filterStatus]);
-
-  const totalLignes = lignesFiltrees.length;
-  const lignesValidees = lignesFiltrees.filter(r => r.codeDechet && r.codeDechet.trim().length === 6).length;
-  const lignesATraiter = lignesFiltrees.filter(r => !r.codeDechet || r.codeDechet.trim() === '' || r.codeDechet.length !== 6).length;
 
   return (
     <main className="min-h-dvh bg-gray-50">
