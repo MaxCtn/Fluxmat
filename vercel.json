@@ -2,5 +2,8 @@
   "buildCommand": "pnpm build",
   "outputDirectory": ".next",
   "framework": "nextjs",
-  "installCommand": "pnpm install"
+  "installCommand": "pnpm install",
+  "env": {
+    "NODE_ENV": "production"
+  }
 }
