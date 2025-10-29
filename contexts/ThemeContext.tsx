@@ -20,13 +20,12 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       return 'dark';
     }
     
-    // Sinon, lire depuis localStorage
+    // Sinon, lire depuis localStorage - par défaut mode clair si rien n'est sauvegardé
     const savedTheme = localStorage.getItem('theme') as Theme | null;
-    if (savedTheme) return savedTheme;
+    if (savedTheme === 'dark') return 'dark';
     
-    // En dernier recours, utiliser la préférence système
-    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-    return prefersDark ? 'dark' : 'light';
+    // Par défaut, toujours démarrer en mode clair lors de la première ouverture
+    return 'light';
   };
 
   const [theme, setTheme] = useState<Theme>(getInitialTheme);

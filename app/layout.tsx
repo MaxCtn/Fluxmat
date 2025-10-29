@@ -22,9 +22,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             __html: `
               (function() {
                 try {
+                  // Par défaut, toujours démarrer en mode clair lors de la première ouverture
                   const theme = localStorage.getItem('theme');
-                  const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-                  const shouldUseDark = theme === 'dark' || (!theme && prefersDark);
+                  const shouldUseDark = theme === 'dark'; // Seulement si explicitement défini à 'dark'
                   
                   if (shouldUseDark) {
                     document.documentElement.classList.add('dark');
