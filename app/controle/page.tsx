@@ -153,7 +153,7 @@ export default function ControlePage() {
             <div className="flex gap-3">
               <Link 
                 href="/import" 
-                className="rounded-lg border border-red-300 bg-white px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-50 transition"
+                className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition shadow-sm"
               >
                 ← Retour à l'Import
               </Link>
@@ -171,15 +171,15 @@ export default function ControlePage() {
           <div className="mt-6 flex flex-wrap gap-3">
             <button
               onClick={() => handleReportLater()}
-              className="rounded-lg border-2 border-orange-300 bg-orange-50 px-6 py-3 text-sm font-medium text-orange-800 hover:bg-orange-100 transition shadow-sm hover:shadow-md"
+              className="rounded-lg border-2 border-gray-300 bg-gray-50 px-6 py-3 text-sm font-medium text-gray-700 hover:bg-gray-100 transition shadow-sm hover:shadow-md"
             >
-              📌 Remplir plus tard
+              Remplir plus tard
             </button>
             <Link
               href="/"
               className="rounded-lg border-2 border-gray-300 bg-gray-50 px-6 py-3 text-sm font-medium text-gray-700 hover:bg-gray-100 transition shadow-sm hover:shadow-md"
             >
-              🏠 Retour au tableau de bord
+              ← Retour au tableau de bord
             </Link>
           </div>
         )}

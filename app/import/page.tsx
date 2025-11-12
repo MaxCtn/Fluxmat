@@ -12,6 +12,7 @@ export default function ImportPage() {
   const [fileName, setFileName] = useState<string | undefined>();
   const [registre, setRegistre] = useState<any[]>([]);
   const [controle, setControle] = useState<any[]>([]);
+  const [allRows, setAllRows] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
 
   // Charger les données depuis sessionStorage au montage
@@ -21,6 +22,7 @@ export default function ImportPage() {
       const data = JSON.parse(saved);
       setRegistre(data.registre || []);
       setControle(data.controle || []);
+      setAllRows(data.allRows || []);
       setFileName(data.fileName);
     }
   }, []);
@@ -34,11 +36,14 @@ export default function ImportPage() {
     const data = await res.json();
     const newRegistre = data.registre ?? [];
     const newControle = data.controle ?? [];
+    const newAllRows = data.allRows ?? [];
     setRegistre(newRegistre);
     setControle(newControle);
+    setAllRows(newAllRows);
     sessionStorage.setItem('fluxmat_data', JSON.stringify({
       registre: newRegistre,
       controle: newControle,
+      allRows: newAllRows,
       fileName: file.name
     }));
     setLoading(false);
@@ -48,6 +53,7 @@ export default function ImportPage() {
     sessionStorage.setItem('fluxmat_data', JSON.stringify({
       registre,
       controle,
+      allRows,
       fileName
     }));
     router.push('/controle');
@@ -154,6 +160,7 @@ export default function ImportPage() {
         {totalLignes > 0 && (
           <HierarchicalTreeView
             data={toutesLesLignes}
+            allRows={allRows}
             onDataChange={(updatedData) => {
               // Séparer les données mises à jour en registre et controle
               const newRegistre = updatedData.filter(r => r.codeDechet && r.codeDechet.trim().length === 6);

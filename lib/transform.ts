@@ -1,10 +1,11 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { isWaste, extractCedCode, suggestCodeDechet } from './wasteUtils';
+import { isWaste, extractCedCode, suggestCodeDechet, isDangerousCode, parseCodeDechetWithDanger } from './wasteUtils';
 
 export type Depense = Record<string, any>;
 export type RegistreRow = {
   dateExpedition: string; quantite: number; codeUnite: "T";
   denominationUsuelle: string; codeDechet?: string;
+  danger?: boolean; // Déchet dangereux ou non
   etablissement?: string; // Code Entité → Etablissement
   agence?: string; // Libellé Entité → Agence
   chantier?: string; // Libellé Chantier → chantier
@@ -216,7 +217,7 @@ function passesFilter(row: any): boolean {
 }
 
 let rowId=0;
-export function transform(rows: Depense[]): TransformResult {
+export function transform(rows: Depense[]): TransformResult & { allRows?: Depense[] } {
   const registre: RegistreRow[]=[]; const controle: (Depense & { suggestionCodeDechet?: string; __id?: string })[]=[];
 
   console.log(`[TRANSFORM] Début transformation de ${rows.length} lignes`);
@@ -251,15 +252,29 @@ export function transform(rows: Depense[]): TransformResult {
     const fournisseur = exutoire; // Libellé Fournisseur
 
     // Extraire le code CED explicite depuis le libellé
+    // D'abord, vérifier si le label contient un astérisque (indicateur de danger)
+    const labelHasAsterisk = isDangerousCode(label);
+    
     const { codeCED: ced } = extractCedCode(label);
     // Convertir null en undefined pour compatibilité TypeScript
     const codeDechet = ced || undefined;
     
     // Suggérer un code déchet depuis les mots-clés si pas de code explicite
     let suggestionCodeDechet: string | undefined;
+    let dangerValue: boolean | undefined = undefined;
     if (!codeDechet) {
+      // Déterminer la source depuis les données (peut être dans une colonne spécifique)
+      // Pour l'instant, on ne passe pas de source, mais on pourrait l'extraire depuis row
       const suggestion = suggestCodeDechet(label);
       suggestionCodeDechet = suggestion?.codeCED || undefined;
+      // Priorité : astérisque dans le label > suggestion de la table
+      dangerValue = labelHasAsterisk || suggestion?.danger;
+    } else {
+      // Si on a un code explicite, vérifier d'abord l'astérisque dans le label
+      // Puis chercher aussi le danger depuis la table de correspondance
+      const suggestion = suggestCodeDechet(label);
+      // Priorité : astérisque dans le label > suggestion de la table
+      dangerValue = labelHasAsterisk || suggestion?.danger;
     }
     
     const base: RegistreRow = {
@@ -268,6 +283,7 @@ export function transform(rows: Depense[]): TransformResult {
       codeUnite: normUnit(unite),
       denominationUsuelle: String(label || "").replace(/\s+/g," ").trim(),
       codeDechet, // Code déchet si trouvé, sinon undefined
+      danger: dangerValue, // Déchet dangereux ou non
       // Nouveaux champs avec mapping
       etablissement: etablissement || undefined,
       agence: agence || undefined,
@@ -291,6 +307,7 @@ export function transform(rows: Depense[]): TransformResult {
       raw["denominationUsuelle"]=base.denominationUsuelle;
       raw["quantite"]=base.quantite; 
       raw["codeUnite"]=base.codeUnite;
+      raw["danger"]=dangerValue; // Ajouter le champ danger
       // Nouveaux champs avec mapping
       raw["etablissement"]=base.etablissement;
       raw["agence"]=base.agence;
@@ -306,5 +323,5 @@ export function transform(rows: Depense[]): TransformResult {
   }
   
   console.log(`[TRANSFORM] Transformation terminée: ${registre.length} lignes avec code déchet (registre), ${controle.length} lignes sans code (contrôle)`);
-  return { registre, controle };
+  return { registre, controle, allRows: rows };
 }

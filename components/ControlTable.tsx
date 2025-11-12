@@ -1,7 +1,29 @@
 'use client';
 import { useEffect, useState } from 'react';
 import Toast from './Toast';
-import { suggestCodeDechet } from '@/lib/wasteUtils';
+import { suggestCodeDechet, isDangerousCode, parseCodeDechetWithDanger } from '@/lib/wasteUtils';
+
+/**
+ * Icône stylo pour modifier
+ */
+function EditIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" width="16" height="16">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+    </svg>
+  );
+}
+
+/**
+ * Icône poubelle pour supprimer
+ */
+function TrashIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" width="16" height="16">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+    </svg>
+  );
+}
 
 function normalizeCode(v: string) { return (v || '').replace(/\D/g, '').slice(0, 6); }
 
@@ -55,6 +77,13 @@ export default function ControlTable({ rows, onValidate }: { rows: any[]; onVali
     return match ? match.codeCED : null;
   }
 
+  // Fonction pour obtenir le danger depuis la suggestion
+  function getDangerForRow(row: any): boolean | undefined {
+    const label = row.denominationUsuelle || row['Libellé Ressource'] || '';
+    const match = suggestCodeDechet(label);
+    return match?.danger;
+  }
+
   function autoCompleteAll() {
     let count = 0;
     const updated = allRows.map(row => {
@@ -80,9 +109,19 @@ export default function ControlTable({ rows, onValidate }: { rows: any[]; onVali
 
   function handleAutoForRow(row: any) {
     const suggestion = getSuggestionForRow(row);
+    const dangerFromSuggestion = getDangerForRow(row);
     if (suggestion) {
+      // Vérifier si le code suggéré contient un astérisque (dans le format original de la table)
+      // La suggestion retourne un code sans astérisque, donc on utilise dangerFromSuggestion
+      // Mais on peut aussi vérifier dans le label original
+      const label = row.denominationUsuelle || row['Libellé Ressource'] || '';
+      const dangerFromAsterisk = isDangerousCode(label);
+      
+      // Priorité : astérisque dans le label > suggestion de la table
+      const finalDanger = dangerFromAsterisk || dangerFromSuggestion;
+      
       const updated = allRows.map(r => 
-        r.__id === row.__id ? { ...r, codeDechet: suggestion } : r
+        r.__id === row.__id ? { ...r, codeDechet: suggestion, danger: finalDanger !== undefined ? finalDanger : r.danger } : r
       );
       setAllRows(updated);
       setToastMessage(`Code déchet ${suggestion} appliqué !`);
@@ -118,7 +157,7 @@ export default function ControlTable({ rows, onValidate }: { rows: any[]; onVali
     setConfirmDelete(null);
   }
 
-  if (!rows.length) return <div className="text-slate-500 text-sm">Rien à afficher.</div>;
+  if (!rows.length) return <div className="text-gray-500 text-sm">Rien à afficher.</div>;
 
   return (
     <div className="space-y-6">
@@ -127,20 +166,20 @@ export default function ControlTable({ rows, onValidate }: { rows: any[]; onVali
         <div className="flex gap-3">
           <button
             onClick={autoCompleteAll}
-            className="rounded-lg bg-blue-100 text-blue-700 px-4 py-2 text-sm font-medium hover:bg-blue-200 transition shadow-md hover:shadow-lg disabled:opacity-50"
+            className="rounded-lg bg-blue-50 text-blue-900 px-4 py-2 text-sm font-medium hover:bg-blue-100 transition shadow-sm hover:shadow-md disabled:opacity-50 border border-blue-200"
             disabled={rowsAvecSuggestion.length === 0 && rowsADefinir.length === 0}
           >
-            ✨ Auto-compléter toutes les lignes
+            Auto-compléter toutes les lignes
           </button>
           <button
             onClick={() => setEditMode(!editMode)}
             className={`rounded-lg border-2 px-4 py-2 text-sm font-medium transition ${
               editMode
-                ? 'border-red-500 bg-red-50 text-red-700'
+                ? 'border-red-200 bg-red-50 text-red-700'
                 : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
             }`}
           >
-            {editMode ? '✏️ Mode édition: ON' : '✏️ Mode édition: OFF'}
+            {editMode ? 'Mode édition: ON' : 'Mode édition: OFF'}
           </button>
         </div>
         <button
@@ -151,32 +190,33 @@ export default function ControlTable({ rows, onValidate }: { rows: any[]; onVali
         </button>
       </div>
 
-      {/* Tableau 1: Lignes avec suggestion (ORANGE) */}
+      {/* Tableau 1: Lignes avec suggestion (BLEU) */}
       {rowsAvecSuggestion.length > 0 && (
-        <div className="border-2 border-orange-400 rounded-xl p-6 bg-orange-50 animate-fade-in">
-          <h3 className="text-lg font-semibold text-orange-800 mb-4">
-            🟠 Lignes avec suggestion ({rowsAvecSuggestion.length})
+        <div className="border-2 border-blue-200 rounded-xl p-6 bg-blue-50 animate-fade-in shadow-sm">
+          <h3 className="text-lg font-semibold text-blue-900 mb-4">
+            Lignes avec suggestion ({rowsAvecSuggestion.length})
           </h3>
           <div className="overflow-x-auto">
             <table className="table w-full">
-              <thead className="bg-orange-100">
-                <tr className="border-b-2 border-orange-300">
+              <thead className="bg-blue-50">
+                <tr className="border-b-2 border-blue-200">
                   <th className="px-3 py-2 text-left">Date</th>
-                  <th className="px-3 py-2 text-left max-w-[300px]">Ressource</th>
-                  <th className="px-3 py-2 text-left">Entité</th>
+                  <th className="px-3 py-2 text-left max-w-[300px]">Dénomination</th>
+                  <th className="px-3 py-2 text-left">Agence</th>
                   <th className="px-3 py-2 text-left">Chantier</th>
-                  <th className="px-3 py-2 text-center">Qté</th>
-                  <th className="px-3 py-2 text-center">Unit</th>
-                  <th className="px-3 py-2 text-center">Code</th>
+                  <th className="px-3 py-2 text-center">Quantité</th>
+                  <th className="px-3 py-2 text-center">Unité</th>
+                  <th className="px-3 py-2 text-center">Code déchet</th>
+                  <th className="px-3 py-2 text-center">Danger</th>
                   <th className="px-3 py-2 text-center">Auto</th>
                   {editMode && <th className="px-3 py-2 text-center">Actions</th>}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-orange-200">
+              <tbody className="divide-y divide-blue-200">
                 {rowsAvecSuggestion.map((r, i) => {
                   const suggestion = getSuggestionForRow(r);
                   return (
-                    <tr key={r.__id ?? `orange-${i}`} className="bg-white hover:bg-orange-50 transition">
+                    <tr key={r.__id ?? `blue-${i}`} className="bg-white hover:bg-blue-50 transition">
                       <td className="px-3 py-2">{formatDate(r.dateExpedition ?? r.Date ?? '')}</td>
                       <td className="px-3 py-2 max-w-[300px] truncate">{r.denominationUsuelle ?? r['Libellé Ressource'] ?? ''}</td>
                       <td className="px-3 py-2 truncate max-w-[150px]">{r['producteur.raisonSociale'] ?? r['Libellé Entité'] ?? ''}</td>
@@ -192,15 +232,38 @@ export default function ControlTable({ rows, onValidate }: { rows: any[]; onVali
                             const idx = allRows.findIndex(row => row.__id === r.__id);
                             if (idx >= 0) {
                               const next = [...allRows];
-                              next[idx].codeDechet = normalizeCode(e.target.value);
+                              const inputValue = e.target.value;
+                              // Détecter si le code contient un astérisque
+                              const { code, danger } = parseCodeDechetWithDanger(inputValue);
+                              next[idx].codeDechet = normalizeCode(code);
+                              // Si l'astérisque est présent, cocher automatiquement la case danger
+                              if (danger) {
+                                next[idx].danger = true;
+                              }
                               setAllRows(next);
                             }
                           }}
                         />
                       </td>
                       <td className="px-3 py-2 text-center">
+                        <input
+                          type="checkbox"
+                          checked={r.danger === true}
+                          onChange={(e) => {
+                            const idx = allRows.findIndex(row => row.__id === r.__id);
+                            if (idx >= 0) {
+                              const next = [...allRows];
+                              next[idx].danger = e.target.checked;
+                              setAllRows(next);
+                            }
+                          }}
+                          className="w-4 h-4 text-red-600 border-gray-300 rounded focus:ring-red-500"
+                          title="Déchet dangereux"
+                        />
+                      </td>
+                      <td className="px-3 py-2 text-center">
                         <button
-                          className="rounded-lg px-3 py-1 text-sm font-medium bg-slate-100 text-slate-700 hover:bg-slate-200 transition border border-slate-300"
+                          className="rounded-lg px-3 py-1 text-sm font-medium bg-gray-100 text-gray-700 hover:bg-gray-200 transition border border-gray-300"
                           onClick={() => handleAutoForRow(r)}
                         >
                           Auto
@@ -211,17 +274,17 @@ export default function ControlTable({ rows, onValidate }: { rows: any[]; onVali
                           <div className="flex gap-2 justify-center">
                             <button
                               onClick={() => handleModify(r)}
-                              className="rounded px-2 py-1 text-slate-600 hover:bg-slate-100 transition border border-slate-300"
+                              className="p-1.5 text-gray-600 hover:text-blue-600 hover:bg-blue-50 border border-gray-300 rounded transition-colors"
                               title="Modifier"
                             >
-                              ✏️
+                              <EditIcon className="w-4 h-4" />
                             </button>
                             <button
                               onClick={() => setConfirmDelete(r.__id ?? i.toString())}
-                              className="rounded px-2 py-1 text-slate-600 hover:bg-slate-100 transition border border-slate-300"
+                              className="p-1.5 text-gray-600 hover:text-red-600 hover:bg-red-50 border border-gray-300 rounded transition-colors"
                               title="Supprimer"
                             >
-                              🗑️
+                              <TrashIcon className="w-4 h-4" />
                             </button>
                           </div>
                         </td>
@@ -237,21 +300,22 @@ export default function ControlTable({ rows, onValidate }: { rows: any[]; onVali
 
       {/* Tableau 2: Lignes à définir (GRIS) */}
       {rowsADefinir.length > 0 && (
-        <div className="border-2 border-gray-400 rounded-xl p-6 bg-gray-50 animate-fade-in">
-          <h3 className="text-lg font-semibold text-gray-800 mb-4">
-            ⚪ Lignes à définir ({rowsADefinir.length})
+        <div className="border-2 border-gray-200 rounded-xl p-6 bg-gray-50 animate-fade-in shadow-sm">
+          <h3 className="text-lg font-semibold text-gray-900 mb-4">
+            Lignes à définir ({rowsADefinir.length})
           </h3>
           <div className="overflow-x-auto">
             <table className="table w-full">
               <thead className="bg-gray-100">
                 <tr className="border-b-2 border-gray-300">
                   <th className="px-3 py-2 text-left">Date</th>
-                  <th className="px-3 py-2 text-left max-w-[300px]">Ressource</th>
-                  <th className="px-3 py-2 text-left">Entité</th>
+                  <th className="px-3 py-2 text-left max-w-[300px]">Dénomination</th>
+                  <th className="px-3 py-2 text-left">Agence</th>
                   <th className="px-3 py-2 text-left">Chantier</th>
-                  <th className="px-3 py-2 text-center">Qté</th>
-                  <th className="px-3 py-2 text-center">Unit</th>
-                  <th className="px-3 py-2 text-center">Code</th>
+                  <th className="px-3 py-2 text-center">Quantité</th>
+                  <th className="px-3 py-2 text-center">Unité</th>
+                  <th className="px-3 py-2 text-center">Code déchet</th>
+                  <th className="px-3 py-2 text-center">Danger</th>
                   <th className="px-3 py-2 text-center">Auto</th>
                   {editMode && <th className="px-3 py-2 text-center">Actions</th>}
                 </tr>
@@ -274,15 +338,38 @@ export default function ControlTable({ rows, onValidate }: { rows: any[]; onVali
                           const idx = allRows.findIndex(row => row.__id === r.__id);
                           if (idx >= 0) {
                             const next = [...allRows];
-                            next[idx].codeDechet = normalizeCode(e.target.value);
+                            const inputValue = e.target.value;
+                            // Détecter si le code contient un astérisque
+                            const { code, danger } = parseCodeDechetWithDanger(inputValue);
+                            next[idx].codeDechet = normalizeCode(code);
+                            // Si l'astérisque est présent, cocher automatiquement la case danger
+                            if (danger) {
+                              next[idx].danger = true;
+                            }
                             setAllRows(next);
                           }
                         }}
                       />
                     </td>
                     <td className="px-3 py-2 text-center">
+                      <input
+                        type="checkbox"
+                        checked={r.danger === true}
+                        onChange={(e) => {
+                          const idx = allRows.findIndex(row => row.__id === r.__id);
+                          if (idx >= 0) {
+                            const next = [...allRows];
+                            next[idx].danger = e.target.checked;
+                            setAllRows(next);
+                          }
+                        }}
+                        className="w-4 h-4 text-red-600 border-gray-300 rounded focus:ring-red-500"
+                        title="Déchet dangereux"
+                      />
+                    </td>
+                    <td className="px-3 py-2 text-center">
                       <button
-                        className="rounded-lg px-3 py-1 text-sm font-medium bg-slate-100 text-slate-700 hover:bg-slate-200 transition border border-slate-300"
+                        className="rounded-lg px-3 py-1 text-sm font-medium bg-gray-100 text-gray-700 hover:bg-gray-200 transition border border-gray-300"
                         onClick={() => handleAutoForRow(r)}
                         title="Aucune suggestion disponible"
                       >
@@ -294,17 +381,17 @@ export default function ControlTable({ rows, onValidate }: { rows: any[]; onVali
                         <div className="flex gap-2 justify-center">
                           <button
                             onClick={() => handleModify(r)}
-                            className="rounded px-2 py-1 text-slate-600 hover:bg-slate-100 transition border border-slate-300"
+                            className="p-1.5 text-gray-600 hover:text-blue-600 hover:bg-blue-50 border border-gray-300 rounded transition-colors"
                             title="Modifier"
                           >
-                            ✏️
+                            <EditIcon className="w-4 h-4" />
                           </button>
                           <button
                             onClick={() => setConfirmDelete(r.__id ?? i.toString())}
-                            className="rounded px-2 py-1 text-slate-600 hover:bg-slate-100 transition border border-slate-300"
+                            className="p-1.5 text-gray-600 hover:text-red-600 hover:bg-red-50 border border-gray-300 rounded transition-colors"
                             title="Supprimer"
                           >
-                            🗑️
+                            <TrashIcon className="w-4 h-4" />
                           </button>
                         </div>
                       </td>
@@ -319,21 +406,22 @@ export default function ControlTable({ rows, onValidate }: { rows: any[]; onVali
 
       {/* Tableau 3: Lignes validées (VERT) */}
       {rowsValidees.length > 0 && (
-        <div className="border-2 border-green-400 rounded-xl p-6 bg-green-50 animate-fade-in">
-          <h3 className="text-lg font-semibold text-green-800 mb-4">
-            🟢 Lignes avec code déchet validé ({rowsValidees.length})
+        <div className="border-2 border-green-200 rounded-xl p-6 bg-green-50 animate-fade-in shadow-sm">
+          <h3 className="text-lg font-semibold text-green-900 mb-4">
+            Lignes avec code déchet validé ({rowsValidees.length})
           </h3>
       <div className="overflow-x-auto">
             <table className="table w-full">
-              <thead className="bg-green-100">
-                <tr className="border-b-2 border-green-300">
+              <thead className="bg-green-50">
+                <tr className="border-b-2 border-green-200">
                   <th className="px-3 py-2 text-left">Date</th>
-                  <th className="px-3 py-2 text-left max-w-[300px]">Ressource</th>
-                  <th className="px-3 py-2 text-left">Entité</th>
+                  <th className="px-3 py-2 text-left max-w-[300px]">Dénomination</th>
+                  <th className="px-3 py-2 text-left">Agence</th>
                   <th className="px-3 py-2 text-left">Chantier</th>
-                  <th className="px-3 py-2 text-center">Qté</th>
-                  <th className="px-3 py-2 text-center">Unit</th>
-                  <th className="px-3 py-2 text-center">Code</th>
+                  <th className="px-3 py-2 text-center">Quantité</th>
+                  <th className="px-3 py-2 text-center">Unité</th>
+                  <th className="px-3 py-2 text-center">Code déchet</th>
+                  <th className="px-3 py-2 text-center">Danger</th>
                   <th className="px-3 py-2 text-center">Action</th>
                   {editMode && <th className="px-3 py-2 text-center">Actions</th>}
                 </tr>
@@ -355,15 +443,38 @@ export default function ControlTable({ rows, onValidate }: { rows: any[]; onVali
                           const idx = allRows.findIndex(row => row.__id === r.__id);
                           if (idx >= 0) {
                             const next = [...allRows];
-                            next[idx].codeDechet = normalizeCode(e.target.value);
+                            const inputValue = e.target.value;
+                            // Détecter si le code contient un astérisque
+                            const { code, danger } = parseCodeDechetWithDanger(inputValue);
+                            next[idx].codeDechet = normalizeCode(code);
+                            // Si l'astérisque est présent, cocher automatiquement la case danger
+                            if (danger) {
+                              next[idx].danger = true;
+                            }
                             setAllRows(next);
                           }
                         }}
                       />
                     </td>
                     <td className="px-3 py-2 text-center">
+                      <input
+                        type="checkbox"
+                        checked={r.danger === true}
+                        onChange={(e) => {
+                          const idx = allRows.findIndex(row => row.__id === r.__id);
+                          if (idx >= 0) {
+                            const next = [...allRows];
+                            next[idx].danger = e.target.checked;
+                            setAllRows(next);
+                          }
+                        }}
+                        className="w-4 h-4 text-red-600 border-gray-300 rounded focus:ring-red-500"
+                        title="Déchet dangereux"
+                      />
+                    </td>
+                    <td className="px-3 py-2 text-center">
                       <button
-                        className="btn btn-ghost text-red-600 hover:bg-red-50"
+                        className="rounded-lg px-3 py-1 text-sm font-medium text-red-600 hover:bg-red-50 transition border border-red-200"
                         onClick={() => {
                           const idx = allRows.findIndex(row => row.__id === r.__id);
                           if (idx >= 0) {
@@ -381,17 +492,17 @@ export default function ControlTable({ rows, onValidate }: { rows: any[]; onVali
                         <div className="flex gap-2 justify-center">
                           <button
                             onClick={() => handleModify(r)}
-                            className="rounded px-2 py-1 text-blue-600 hover:bg-blue-50 transition"
+                            className="p-1.5 text-gray-600 hover:text-blue-600 hover:bg-blue-50 border border-gray-300 rounded transition-colors"
                             title="Modifier"
                           >
-                            ✏️
+                            <EditIcon className="w-4 h-4" />
                           </button>
                           <button
                             onClick={() => setConfirmDelete(r.__id ?? i.toString())}
-                            className="rounded px-2 py-1 text-red-600 hover:bg-red-50 transition"
+                            className="p-1.5 text-gray-600 hover:text-red-600 hover:bg-red-50 border border-gray-300 rounded transition-colors"
                             title="Supprimer"
                           >
-                            🗑️
+                            <TrashIcon className="w-4 h-4" />
                           </button>
                         </div>
                       </td>

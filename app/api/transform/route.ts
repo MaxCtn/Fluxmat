@@ -25,7 +25,8 @@ export async function POST(req: NextRequest) {
     
     return NextResponse.json({ 
       registre: result.registre, 
-      controle: result.controle
+      controle: result.controle,
+      allRows: result.allRows || []
     });
   } catch (e:any) {
     console.error(`[TRANSFORM] Erreur:`, e);

@@ -1,9 +1,16 @@
 import { WASTE_MAP, WasteMapItem } from './wasteMap';
+import { findInCorrespondanceTable, initCorrespondanceTable } from './correspondanceTable';
+
+// Initialiser la table de correspondance au chargement du module
+if (typeof window !== 'undefined') {
+  initCorrespondanceTable();
+}
 
 export interface WasteMatch {
   codeCED: string; // Format "170302" (sans espaces)
   label: string;
   categorie: string;
+  danger?: boolean; // Nouveau champ : déchet dangereux ou non
 }
 
 /**
@@ -18,6 +25,31 @@ export function normalizeText(text: string): string {
     .replace(/[^a-z0-9\s]/g, ' ') // Remplace caractères spéciaux par espaces
     .replace(/\s+/g, ' ') // Normalise les espaces multiples
     .trim();
+}
+
+/**
+ * Détermine si un code déchet est dangereux
+ * Un code est dangereux s'il se termine par * ou contient un astérisque
+ * Format accepté : "13 02 05*", "130205*", "13-02-05*"
+ */
+export function isDangerousCode(codeDechet: string | undefined): boolean {
+  if (!codeDechet) return false;
+  const trimmed = codeDechet.trim();
+  // Détecter l'astérisque dans le code (format "13 02 05*" ou "130205*")
+  return trimmed.endsWith('*') || trimmed.includes('*');
+}
+
+/**
+ * Extrait le code déchet sans l'astérisque et détermine le danger
+ * Retourne le code normalisé (sans espaces ni astérisque) et l'indicateur de danger
+ */
+export function parseCodeDechetWithDanger(codeDechet: string): { code: string; danger: boolean } {
+  if (!codeDechet) return { code: '', danger: false };
+  const trimmed = codeDechet.trim();
+  const hasAsterisk = trimmed.endsWith('*') || trimmed.includes('*');
+  // Retirer l'astérisque et normaliser (retirer espaces, tirets)
+  const code = trimmed.replace(/\*/g, '').replace(/[\s\-]/g, '');
+  return { code, danger: hasAsterisk };
 }
 
 /**
@@ -203,12 +235,43 @@ export function matchWasteKeywords(normalizedText: string, wasteMap: WasteMapIte
 
 /**
  * Fonction principale pour suggérer un code déchet depuis un libellé
- * Combine extractCedCode et matchWasteKeywords
+ * Priorité : 1. Table de correspondance, 2. Code CED explicite, 3. WASTE_MAP par mots-clés
  */
-export function suggestCodeDechet(label: string | undefined): WasteMatch | null {
+export function suggestCodeDechet(
+  label: string | undefined,
+  source?: 'ATELIER' | 'LABO' | 'DEPOT'
+): WasteMatch | null {
   if (!label) return null;
   
-  // D'abord, essayer d'extraire un code CED explicite (texte original pour préserver les caractères spéciaux)
+  // 1. PRIORITÉ : Chercher dans la table de correspondance
+  const correspondanceMatch = findInCorrespondanceTable(label, source);
+  if (correspondanceMatch) {
+    // Convertir le code déchet (format "13 02 05*") en format sans espaces
+    const codeCED = correspondanceMatch.codeDechet.replace(/\s/g, '').replace(/\*/g, '');
+    
+    // Déterminer la catégorie basée sur le danger
+    let categorie: string;
+    if (correspondanceMatch.danger) {
+      categorie = "Déchet dangereux";
+    } else {
+      // Essayer de déterminer depuis le code CED
+      const codeStart = codeCED.slice(0, 2);
+      if (codeStart === '17') {
+        categorie = "Déchet inerte";
+      } else {
+        categorie = "Déchet non dangereux";
+      }
+    }
+    
+    return {
+      codeCED,
+      label: correspondanceMatch.formulationCatalogue,
+      categorie,
+      danger: correspondanceMatch.danger
+    };
+  }
+  
+  // 2. Essayer d'extraire un code CED explicite (texte original pour préserver les caractères spéciaux)
   const { codeCED } = extractCedCode(label);
   if (codeCED) {
     // Si on trouve un code explicite, chercher son label dans WASTE_MAP
@@ -234,7 +297,7 @@ export function suggestCodeDechet(label: string | undefined): WasteMatch | null 
     };
   }
   
-  // Sinon, chercher par mots-clés (normaliser pour la recherche)
+  // 3. Fallback : chercher par mots-clés dans WASTE_MAP (normaliser pour la recherche)
   const normalized = normalizeText(label);
   return matchWasteKeywords(normalized);
 }

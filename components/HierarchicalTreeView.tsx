@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import SortableHeader, { SortDirection } from './SortableHeader';
 import FilterableCodeDechetHeader, { CodeDechetFilter } from './FilterableCodeDechetHeader';
+import { isDangerousCode, parseCodeDechetWithDanger } from '@/lib/wasteUtils';
 
 interface RowData {
   __id?: string;
@@ -11,6 +12,7 @@ interface RowData {
   quantite?: number;
   codeUnite?: string;
   codeDechet?: string;
+  danger?: boolean; // Déchet dangereux ou non
   etablissement?: string;
   agence?: string;
   chantier?: string;
@@ -43,6 +45,7 @@ interface GroupedRow {
 
 interface HierarchicalTreeViewProps {
   data: RowData[];
+  allRows?: RowData[]; // Toutes les lignes brutes du CSV (y compris les lignes de matériel)
   onDataChange?: (data: RowData[]) => void; // Callback quand les données changent (modif/suppression)
 }
 
@@ -240,11 +243,6 @@ function sortGroupedRows(
       case 'denomination':
         comparison = a.denomination.localeCompare(b.denomination);
         break;
-      case 'exutoire':
-        const exutoireA = a.exutoires.join(', ');
-        const exutoireB = b.exutoires.join(', ');
-        comparison = exutoireA.localeCompare(exutoireB);
-        break;
       case 'quantite':
         comparison = a.quantiteTotal - b.quantiteTotal;
         break;
@@ -341,8 +339,7 @@ function TrashIcon({ className }: { className?: string }) {
 /**
  * Composant principal pour afficher les données de manière hiérarchique en tableau
  */
-export default function HierarchicalTreeView({ data, onDataChange }: HierarchicalTreeViewProps) {
-  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
+export default function HierarchicalTreeView({ data, allRows = [], onDataChange }: HierarchicalTreeViewProps) {
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set()); // Pour les groupes date+dénomination
   const [editingRow, setEditingRow] = useState<RowData | null>(null);
   const [localData, setLocalData] = useState<RowData[]>(data);
@@ -351,6 +348,8 @@ export default function HierarchicalTreeView({ data, onDataChange }: Hierarchica
     direction: 'desc' // Par défaut : date desc (plus récent en premier)
   });
   const [codeDechetFilter, setCodeDechetFilter] = useState<CodeDechetFilter>('all');
+  const [modalOpen, setModalOpen] = useState(false);
+  const [modalData, setModalData] = useState<RowData[]>([]);
 
   // Synchroniser localData avec les props si les données changent
   useEffect(() => {
@@ -383,24 +382,6 @@ export default function HierarchicalTreeView({ data, onDataChange }: Hierarchica
       const chant = row.chantier || row['Libellé Chantier'] || row['Libelle Chantier'] || row['producteur.adresse.libelle'] || 'Non renseigné';
       return etab === etablissement && ag === agence && chant === chantier;
     });
-  };
-
-  const toggleExpand = (key: string) => {
-    const newExpanded = new Set(expandedRows);
-    if (newExpanded.has(key)) {
-      newExpanded.delete(key);
-      // Fermer aussi les groupes de cette ligne
-      const groupKeysToRemove: string[] = [];
-      expandedGroups.forEach(groupKey => {
-        if (groupKey.startsWith(key)) {
-          groupKeysToRemove.push(groupKey);
-        }
-      });
-      groupKeysToRemove.forEach(groupKey => expandedGroups.delete(groupKey));
-    } else {
-      newExpanded.add(key);
-    }
-    setExpandedRows(newExpanded);
   };
 
   const toggleGroup = (groupKey: string) => {
@@ -444,6 +425,72 @@ export default function HierarchicalTreeView({ data, onDataChange }: Hierarchica
     if (onDataChange) onDataChange(updated);
   };
 
+  /**
+   * Extrait le type de camion depuis les données brutes d'une ligne
+   * Associe les lignes de "Pointage matériel" aux lignes de déchets par date et chantier
+   */
+  const extractTruckType = (row: RowData): string => {
+    // Si c'est déjà une ligne de pointage matériel, extraire directement
+    const origine = row['Origine'] || row['Libellé Origine'] || row['Libelle Origine'] || '';
+    if (String(origine).includes('Pointage matériel')) {
+      const libelleRessource = row['Libellé Ressource'] || row['Libelle Ressource'] || row['Ressource'] || '';
+      if (libelleRessource) {
+        const truckDesc = String(libelleRessource).trim();
+        if (truckDesc && truckDesc.length > 0) {
+          return truckDesc;
+        }
+      }
+    }
+    
+    // Sinon, chercher dans allRows (toutes les lignes brutes) les lignes de matériel associées
+    // Associer par date et chantier
+    const rowDateNormalized = normalizeDateForSort(row.dateExpedition || row['Date'] || '');
+    const rowChantier = row.chantier || row['Libellé Chantier'] || row['Libelle Chantier'] || row['producteur.adresse.libelle'] || '';
+    
+    // Chercher les lignes de "Pointage matériel" avec la même date et le même chantier
+    const materialRows = allRows.filter((materialRow: any) => {
+      const materialOrigine = materialRow['Origine'] || materialRow['Libellé Origine'] || materialRow['Libelle Origine'] || '';
+      if (!String(materialOrigine).includes('Pointage matériel')) return false;
+      
+      const materialDateNormalized = normalizeDateForSort(materialRow.dateExpedition || materialRow['Date'] || '');
+      const materialChantier = materialRow.chantier || materialRow['Libellé Chantier'] || materialRow['Libelle Chantier'] || materialRow['producteur.adresse.libelle'] || '';
+      
+      return materialDateNormalized === rowDateNormalized && materialChantier === rowChantier;
+    });
+    
+    // Si on trouve des lignes de matériel, extraire le type de camion
+    if (materialRows.length > 0) {
+      // Prendre la première ligne de matériel trouvée
+      const materialRow = materialRows[0];
+      const libelleRessource = materialRow['Libellé Ressource'] || materialRow['Libelle Ressource'] || materialRow['Ressource'] || '';
+      if (libelleRessource) {
+        const truckDesc = String(libelleRessource).trim();
+        if (truckDesc && truckDesc.length > 0) {
+          return truckDesc;
+        }
+      }
+    }
+    
+    // Dernière tentative : chercher dans les colonnes de la ligne actuelle
+    for (const key in row) {
+      const value = String(row[key] || '');
+      if (value.includes('MASTER') || value.includes('C 480') || value.includes('BENNE') || 
+          value.includes('camion') || value.includes('transport') || value.includes('52026A') || value.includes('MH383')) {
+        return value;
+      }
+    }
+    
+    return 'Non renseigné';
+  };
+
+  /**
+   * Ouvre la modal avec les informations de transport pour une ou plusieurs lignes
+   */
+  const handleOpenTransportModal = (items: RowData[]) => {
+    setModalData(items);
+    setModalOpen(true);
+  };
+
   if (localData.length === 0) {
     return (
       <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
@@ -453,472 +500,500 @@ export default function HierarchicalTreeView({ data, onDataChange }: Hierarchica
   }
 
   return (
-    <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm mb-8">
-      <h2 className="text-xl font-semibold mb-6 text-gray-900">Vue hiérarchique des données</h2>
-      
-      <div className="overflow-x-auto rounded-lg border border-gray-200">
-        <table className="min-w-full divide-y divide-gray-200">
-          <thead className="bg-gray-50">
-            <tr>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Établissement
-              </th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Agence
-              </th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Chantier
-              </th>
-              <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Avec code
-              </th>
-              <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Sans code
-              </th>
-              <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Quantité
-              </th>
-              <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Unité
-              </th>
-              <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Actions
-              </th>
-            </tr>
-          </thead>
-          <tbody className="bg-white divide-y divide-gray-200">
-            {rows.map((row, idx) => {
-              const rowKey = `${row.etablissement}|${row.agence}|${row.chantier}`;
-              const isExpanded = expandedRows.has(rowKey);
-              const totalLignes = row.withCode.length + row.withoutCode.length;
-
-              return (
-                <>
-                  <tr key={rowKey} className="hover:bg-gray-50">
-                    <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
-                      {row.etablissement}
-                    </td>
-                    <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
-                      {row.agence}
-                    </td>
-                    <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
-                      {row.chantier}
-                    </td>
-                    <td className="px-4 py-3 text-center whitespace-nowrap text-sm">
-                      <span className="inline-flex items-center rounded-full bg-green-50 px-2.5 py-0.5 text-sm font-semibold text-green-700">
-                        {row.withCode.length}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-center whitespace-nowrap text-sm">
-                      <span className="inline-flex items-center rounded-full bg-red-50 px-2.5 py-0.5 text-sm font-semibold text-red-700">
-                        {row.withoutCode.length}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-center whitespace-nowrap text-sm text-gray-900">
-                      {row.totalQuantite.toFixed(2)}
-                    </td>
-                    <td className="px-4 py-3 text-center whitespace-nowrap text-sm text-gray-900">
-                      {row.unite}
-                    </td>
-                    <td className="px-4 py-3 text-center whitespace-nowrap text-sm">
-                      {totalLignes > 0 && (
-                        <button
-                          onClick={() => toggleExpand(rowKey)}
-                          className="px-3 py-1.5 border border-gray-300 bg-white text-gray-700 rounded-md text-sm font-medium hover:bg-gray-50 hover:border-gray-400 transition-colors shadow-sm"
-                        >
-                          {isExpanded ? 'Voir moins' : 'Voir plus'}
-                        </button>
-                      )}
-                    </td>
+    <div className="space-y-8 mb-8">
+      {rows.map((row, idx) => {
+        const rowKey = `${row.etablissement}|${row.agence}|${row.chantier}`;
+        const totalLignes = row.withCode.length + row.withoutCode.length;
+        
+        // Récupérer les données à jour du groupe
+        const groupData = getGroupData(row.etablissement, row.agence, row.chantier);
+        
+        // Filtrer selon le filtre code déchet
+        let filteredData = groupData;
+        if (codeDechetFilter === 'with') {
+          filteredData = groupData.filter(r => r.codeDechet && r.codeDechet.trim().length === 6);
+        } else if (codeDechetFilter === 'without') {
+          filteredData = groupData.filter(r => !r.codeDechet || r.codeDechet.trim().length !== 6);
+        }
+        
+        // Grouper et trier les lignes
+        const groupedRows = groupByDateAndDenomination(filteredData);
+        const grouped = sortGroupedRows(groupedRows, sortState?.key || null, sortState?.direction || null);
+        
+        // Séparer les groupes : d'abord ceux avec code déchet, puis ceux sans
+        const withCode = grouped.filter(g => g.codeDechet && g.codeDechet !== 'Multiple' && g.codeDechet.length === 6);
+        const withoutCode = grouped.filter(g => !g.codeDechet || g.codeDechet === 'Multiple' || g.codeDechet.length !== 6);
+        const sortedGrouped = [...withCode, ...withoutCode];
+        
+        if (totalLignes === 0) return null;
+        
+        return (
+          <div key={rowKey} className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+            {/* Titre personnalisé */}
+            <h2 className="text-xl font-semibold mb-6 text-gray-900">
+              {row.etablissement} - {row.agence} - {row.chantier}
+            </h2>
+            
+            {/* Tableau détaillé */}
+            <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <SortableHeader 
+                      label="Date" 
+                      sortKey="date" 
+                      currentSort={sortState} 
+                      onSort={handleSort}
+                      className="px-3 py-2"
+                    />
+                    <SortableHeader 
+                      label="Dénomination" 
+                      sortKey="denomination" 
+                      currentSort={sortState} 
+                      onSort={handleSort}
+                      className="px-3 py-2"
+                    />
+                    <SortableHeader 
+                      label="Quantité" 
+                      sortKey="quantite" 
+                      currentSort={sortState} 
+                      onSort={handleSort}
+                      className="px-3 py-2 text-center"
+                    />
+                    <SortableHeader 
+                      label="Unité" 
+                      sortKey="unite" 
+                      currentSort={sortState} 
+                      onSort={handleSort}
+                      className="px-3 py-2 text-center"
+                    />
+                    <FilterableCodeDechetHeader 
+                      label="Code déchet" 
+                      filterValue={codeDechetFilter}
+                      onFilterChange={setCodeDechetFilter}
+                      className="px-3 py-2 text-center"
+                    />
+                    <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase">Danger</th>
+                    <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase">Actions</th>
                   </tr>
-                  {isExpanded && totalLignes > 0 && (() => {
-                    // Récupérer les données à jour du groupe
-                    const groupData = getGroupData(row.etablissement, row.agence, row.chantier);
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {sortedGrouped.map((group) => {
+                    const fullGroupKey = `${rowKey}-${group.groupKey}`;
+                    const isGroupExpanded = expandedGroups.has(fullGroupKey);
+                    const sortedItems = sortItems(group.items, sortState?.key || null, sortState?.direction || null);
                     
-                    // Filtrer selon le filtre code déchet
-                    let filteredData = groupData;
-                    if (codeDechetFilter === 'with') {
-                      filteredData = groupData.filter(r => r.codeDechet && r.codeDechet.trim().length === 6);
-                    } else if (codeDechetFilter === 'without') {
-                      filteredData = groupData.filter(r => !r.codeDechet || r.codeDechet.trim().length !== 6);
-                    }
+                    const hasMultipleItems = group.items.length > 1;
+                    const singleItem = hasMultipleItems ? null : group.items[0];
+                    const isEditingSingle = singleItem && editingRow?.__id === singleItem.__id;
                     
-                    // Grouper et trier les lignes
-                    const groupedRows = groupByDateAndDenomination(filteredData);
-                    const grouped = sortGroupedRows(groupedRows, sortState?.key || null, sortState?.direction || null);
+                    // Déterminer si le groupe a un code déchet valide
+                    const hasValidCode = group.codeDechet && group.codeDechet !== 'Multiple' && group.codeDechet.length === 6;
                     
                     return (
-                      <tr key={`${rowKey}-details`}>
-                        <td colSpan={8} className="px-0 py-4 bg-gray-50">
-                          <div className="px-6">
-                            {/* Tableau unifié */}
-                            <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
-                              <table className="min-w-full divide-y divide-gray-200">
-                                <thead className="bg-gray-50">
-                                  <tr>
-                                    <SortableHeader 
-                                      label="Date" 
-                                      sortKey="date" 
-                                      currentSort={sortState} 
-                                      onSort={handleSort}
-                                      className="px-3 py-2"
-                                    />
-                                    <SortableHeader 
-                                      label="Dénomination" 
-                                      sortKey="denomination" 
-                                      currentSort={sortState} 
-                                      onSort={handleSort}
-                                      className="px-3 py-2"
-                                    />
-                                    <SortableHeader 
-                                      label="Exutoire" 
-                                      sortKey="exutoire" 
-                                      currentSort={sortState} 
-                                      onSort={handleSort}
-                                      className="px-3 py-2"
-                                    />
-                                    <SortableHeader 
-                                      label="Quantité" 
-                                      sortKey="quantite" 
-                                      currentSort={sortState} 
-                                      onSort={handleSort}
-                                      className="px-3 py-2 text-center"
-                                    />
-                                    <SortableHeader 
-                                      label="Unité" 
-                                      sortKey="unite" 
-                                      currentSort={sortState} 
-                                      onSort={handleSort}
-                                      className="px-3 py-2 text-center"
-                                    />
-                                    <FilterableCodeDechetHeader 
-                                      label="Code déchet" 
-                                      sortKey="codeDechet" 
-                                      currentSort={sortState} 
-                                      onSort={handleSort}
-                                      filterValue={codeDechetFilter}
-                                      onFilterChange={setCodeDechetFilter}
-                                      className="px-3 py-2 text-center"
-                                    />
-                                    <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase">Actions</th>
-                                  </tr>
-                                </thead>
-                                <tbody className="bg-white divide-y divide-gray-200">
-                                  {grouped.map((group) => {
-                                    const fullGroupKey = `${rowKey}-${group.groupKey}`;
-                                    const isGroupExpanded = expandedGroups.has(fullGroupKey);
-                                    const sortedItems = sortItems(group.items, sortState?.key || null, sortState?.direction || null);
-                                    const exutoireDisplay = group.exutoires.length === 1 
-                                      ? group.exutoires[0] 
-                                      : group.exutoires.length > 1 
-                                        ? `Multiple (${group.exutoires.length})` 
-                                        : '-';
-                                    
-                                    const hasMultipleItems = group.items.length > 1;
-                                    const singleItem = hasMultipleItems ? null : group.items[0];
-                                    const isEditingSingle = singleItem && editingRow?.__id === singleItem.__id;
-                                    
-                                    // Déterminer si le groupe a un code déchet valide
-                                    const hasValidCode = group.codeDechet && group.codeDechet !== 'Multiple' && group.codeDechet.length === 6;
-                                    
-                                    return (
-                                      <>
-                                        <tr key={fullGroupKey} className={`hover:bg-gray-50 ${hasValidCode ? '' : 'bg-red-50'}`}>
-                                          <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900 font-medium">
-                                            {isEditingSingle && editingRow ? (
-                                              <input
-                                                type="text"
-                                                value={editingRow.dateExpedition || ''}
-                                                onChange={(e) => setEditingRow({ ...editingRow, dateExpedition: e.target.value })}
-                                                placeholder="DD/MM/YYYY"
-                                                className="px-2 py-1 border border-gray-300 rounded text-sm w-28"
-                                              />
-                                            ) : (
-                                              group.date
-                                            )}
-                                          </td>
-                                          <td className="px-3 py-2 text-sm text-gray-900 font-medium">
-                                            {isEditingSingle && editingRow ? (
-                                              <input
-                                                type="text"
-                                                value={editingRow.denominationUsuelle || editingRow['Libellé Ressource'] || ''}
-                                                onChange={(e) => setEditingRow({ ...editingRow, denominationUsuelle: e.target.value, 'Libellé Ressource': e.target.value })}
-                                                className="px-2 py-1 border border-gray-300 rounded text-sm w-full"
-                                              />
-                                            ) : (
-                                              group.denomination
-                                            )}
-                                          </td>
-                                          <td className="px-3 py-2 text-sm text-gray-900">
-                                            {isEditingSingle && editingRow ? (
-                                              <input
-                                                type="text"
-                                                value={editingRow.exutoire || editingRow['destinataire.raisonSociale'] || editingRow['Libellé Fournisseur'] || ''}
-                                                onChange={(e) => setEditingRow({ 
-                                                  ...editingRow, 
-                                                  exutoire: e.target.value,
-                                                  'destinataire.raisonSociale': e.target.value,
-                                                  'Libellé Fournisseur': e.target.value
-                                                })}
-                                                className="px-2 py-1 border border-gray-300 rounded text-sm w-full"
-                                              />
-                                            ) : (
-                                              exutoireDisplay
-                                            )}
-                                          </td>
-                                          <td className="px-3 py-2 text-center whitespace-nowrap text-sm text-gray-900 font-medium">
-                                            {isEditingSingle && editingRow ? (
-                                              <input
-                                                type="number"
-                                                value={editingRow.quantite || 0}
-                                                onChange={(e) => setEditingRow({ ...editingRow, quantite: Number(e.target.value) })}
-                                                min="0"
-                                                step="0.01"
-                                                className="px-2 py-1 border border-gray-300 rounded text-sm w-20 text-center"
-                                              />
-                                            ) : (
-                                              group.quantiteTotal.toFixed(2)
-                                            )}
-                                          </td>
-                                          <td className="px-3 py-2 text-center whitespace-nowrap text-sm text-gray-900">
-                                            {isEditingSingle && editingRow ? (
-                                              <select
-                                                value={editingRow.codeUnite || editingRow.unite || 'T'}
-                                                onChange={(e) => setEditingRow({ ...editingRow, codeUnite: e.target.value, unite: e.target.value })}
-                                                className="px-2 py-1 border border-gray-300 rounded text-sm"
-                                              >
-                                                <option value="T">T</option>
-                                                <option value="kg">kg</option>
-                                                <option value="m³">m³</option>
-                                                <option value="L">L</option>
-                                              </select>
-                                            ) : (
-                                              group.unite
-                                            )}
-                                          </td>
-                                          <td className="px-3 py-2 text-center whitespace-nowrap text-sm">
-                                            {isEditingSingle && editingRow ? (
-                                              <input
-                                                type="text"
-                                                value={editingRow.codeDechet || ''}
-                                                onChange={(e) => {
-                                                  const normalized = normalizeCode(e.target.value);
-                                                  setEditingRow({ ...editingRow, codeDechet: normalized });
-                                                }}
-                                                className="px-2 py-1 border border-gray-300 rounded text-sm font-mono w-24"
-                                                placeholder="000000"
-                                                maxLength={6}
-                                              />
-                                            ) : hasValidCode ? (
-                                              <span className="px-2 py-1 bg-green-100 text-green-800 rounded font-mono">
-                                                {group.codeDechet}
-                                              </span>
-                                            ) : (
-                                              <span className="text-gray-400">-</span>
-                                            )}
-                                          </td>
-                                          <td className="px-3 py-2 text-center whitespace-nowrap text-sm">
-                                            {hasMultipleItems ? (
-                                              <button
-                                                onClick={() => toggleGroup(fullGroupKey)}
-                                                className="px-2 py-1 text-xs text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded transition-colors"
-                                              >
-                                                {isGroupExpanded ? '▼ Réduire' : '▶ Voir détails'}
-                                              </button>
-                                            ) : singleItem ? (
-                                              isEditingSingle ? (
-                                                <div className="flex gap-2 justify-center">
-                                                  <button
-                                                    onClick={handleSaveEdit}
-                                                    className="px-2 py-1 bg-green-600 text-white rounded text-xs hover:bg-green-700"
-                                                    title="Valider"
-                                                  >
-                                                    ✓
-                                                  </button>
-                                                  <button
-                                                    onClick={handleCancelEdit}
-                                                    className="px-2 py-1 bg-gray-400 text-white rounded text-xs hover:bg-gray-500"
-                                                    title="Annuler"
-                                                  >
-                                                    ✗
-                                                  </button>
-                                                </div>
-                                              ) : (
-                                                <div className="flex gap-2 justify-center">
-                                                  <button
-                                                    onClick={() => handleEdit(singleItem)}
-                                                    className="p-1.5 text-gray-600 hover:text-blue-600 hover:bg-blue-50 border border-gray-300 rounded transition-colors"
-                                                    title="Modifier"
-                                                  >
-                                                    <EditIcon className="w-4 h-4" />
-                                                  </button>
-                                                  <button
-                                                    onClick={() => singleItem.__id && handleDelete(singleItem.__id)}
-                                                    className="p-1.5 text-gray-600 hover:text-red-600 hover:bg-red-50 border border-gray-300 rounded transition-colors"
-                                                    title="Supprimer"
-                                                  >
-                                                    <TrashIcon className="w-4 h-4" />
-                                                  </button>
-                                                </div>
-                                              )
-                                            ) : null}
-                                          </td>
-                                        </tr>
-                                        {isGroupExpanded && sortedItems.map((item, itemIdx) => {
-                                          const isEditing = editingRow?.__id === item.__id;
-                                          const itemHasCode = item.codeDechet && item.codeDechet.trim().length === 6;
-                                          return (
-                                            <tr key={item.__id || `item-${itemIdx}`} className={`hover:bg-gray-50 ${itemHasCode ? '' : 'bg-red-50'}`}>
-                                              <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-600 pl-6">
-                                                {isEditing && editingRow ? (
-                                                  <input
-                                                    type="text"
-                                                    value={editingRow.dateExpedition || ''}
-                                                    onChange={(e) => setEditingRow({ ...editingRow, dateExpedition: e.target.value })}
-                                                    placeholder="DD/MM/YYYY"
-                                                    className="px-2 py-1 border border-gray-300 rounded text-sm w-28"
-                                                  />
-                                                ) : (
-                                                  formatDate(item.dateExpedition)
-                                                )}
-                                              </td>
-                                              <td className="px-3 py-2 text-sm text-gray-600">
-                                                {isEditing && editingRow ? (
-                                                  <input
-                                                    type="text"
-                                                    value={editingRow.denominationUsuelle || editingRow['Libellé Ressource'] || ''}
-                                                    onChange={(e) => setEditingRow({ ...editingRow, denominationUsuelle: e.target.value, 'Libellé Ressource': e.target.value })}
-                                                    className="px-2 py-1 border border-gray-300 rounded text-sm w-full"
-                                                  />
-                                                ) : (
-                                                  item.denominationUsuelle || item['Libellé Ressource'] || '-'
-                                                )}
-                                              </td>
-                                              <td className="px-3 py-2 text-sm text-gray-600">
-                                                {isEditing && editingRow ? (
-                                                  <input
-                                                    type="text"
-                                                    value={editingRow.exutoire || editingRow['destinataire.raisonSociale'] || editingRow['Libellé Fournisseur'] || ''}
-                                                    onChange={(e) => setEditingRow({ 
-                                                      ...editingRow, 
-                                                      exutoire: e.target.value,
-                                                      'destinataire.raisonSociale': e.target.value,
-                                                      'Libellé Fournisseur': e.target.value
-                                                    })}
-                                                    className="px-2 py-1 border border-gray-300 rounded text-sm w-full"
-                                                  />
-                                                ) : (
-                                                  item.exutoire || item['destinataire.raisonSociale'] || item['Libellé Fournisseur'] || '-'
-                                                )}
-                                              </td>
-                                              <td className="px-3 py-2 text-center whitespace-nowrap text-sm text-gray-600">
-                                                {isEditing && editingRow ? (
-                                                  <input
-                                                    type="number"
-                                                    value={editingRow.quantite || 0}
-                                                    onChange={(e) => setEditingRow({ ...editingRow, quantite: Number(e.target.value) })}
-                                                    min="0"
-                                                    step="0.01"
-                                                    className="px-2 py-1 border border-gray-300 rounded text-sm w-20 text-center"
-                                                  />
-                                                ) : (
-                                                  item.quantite || 0
-                                                )}
-                                              </td>
-                                              <td className="px-3 py-2 text-center whitespace-nowrap text-sm text-gray-600">
-                                                {isEditing && editingRow ? (
-                                                  <select
-                                                    value={editingRow.codeUnite || editingRow.unite || 'T'}
-                                                    onChange={(e) => setEditingRow({ ...editingRow, codeUnite: e.target.value, unite: e.target.value })}
-                                                    className="px-2 py-1 border border-gray-300 rounded text-sm"
-                                                  >
-                                                    <option value="T">T</option>
-                                                    <option value="kg">kg</option>
-                                                    <option value="m³">m³</option>
-                                                    <option value="L">L</option>
-                                                  </select>
-                                                ) : (
-                                                  item.codeUnite || item.unite || 'T'
-                                                )}
-                                              </td>
-                                              <td className="px-3 py-2 text-center whitespace-nowrap text-sm">
-                                                {isEditing && editingRow ? (
-                                                  <input
-                                                    type="text"
-                                                    value={editingRow.codeDechet || ''}
-                                                    onChange={(e) => {
-                                                      const normalized = normalizeCode(e.target.value);
-                                                      setEditingRow({ ...editingRow, codeDechet: normalized });
-                                                    }}
-                                                    className="px-2 py-1 border border-gray-300 rounded text-sm font-mono w-24"
-                                                    placeholder="000000"
-                                                    maxLength={6}
-                                                  />
-                                                ) : itemHasCode ? (
-                                                  <span className="px-2 py-1 bg-green-100 text-green-800 rounded font-mono">
-                                                    {item.codeDechet}
-                                                  </span>
-                                                ) : (
-                                                  <span className="text-gray-400">-</span>
-                                                )}
-                                              </td>
-                                              <td className="px-3 py-2 text-center whitespace-nowrap text-sm">
-                                                {isEditing && editingRow ? (
-                                                  <div className="flex gap-2 justify-center">
-                                                    <button
-                                                      onClick={handleSaveEdit}
-                                                      className="px-2 py-1 bg-green-600 text-white rounded text-xs hover:bg-green-700"
-                                                      title="Valider"
-                                                    >
-                                                      ✓
-                                                    </button>
-                                                    <button
-                                                      onClick={handleCancelEdit}
-                                                      className="px-2 py-1 bg-gray-400 text-white rounded text-xs hover:bg-gray-500"
-                                                      title="Annuler"
-                                                    >
-                                                      ✗
-                                                    </button>
-                                                  </div>
-                                                ) : (
-                                                  <div className="flex gap-2 justify-center">
-                                                    <button
-                                                      onClick={() => handleEdit(item)}
-                                                      className="p-1.5 text-gray-600 hover:text-blue-600 hover:bg-blue-50 border border-gray-300 rounded transition-colors"
-                                                      title="Modifier"
-                                                    >
-                                                      <EditIcon className="w-4 h-4" />
-                                                    </button>
-                                                    <button
-                                                      onClick={() => item.__id && handleDelete(item.__id)}
-                                                      className="p-1.5 text-gray-600 hover:text-red-600 hover:bg-red-50 border border-gray-300 rounded transition-colors"
-                                                      title="Supprimer"
-                                                    >
-                                                      <TrashIcon className="w-4 h-4" />
-                                                    </button>
-                                                  </div>
-                                                )}
-                                              </td>
-                                            </tr>
-                                          );
-                                        })}
-                                      </>
+                      <>
+                        <tr key={fullGroupKey} className={`hover:bg-gray-50 ${hasValidCode ? '' : 'bg-red-50'}`}>
+                          <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900 font-medium">
+                            {isEditingSingle && editingRow ? (
+                              <input
+                                type="text"
+                                value={editingRow.dateExpedition || ''}
+                                onChange={(e) => setEditingRow({ ...editingRow, dateExpedition: e.target.value })}
+                                placeholder="DD/MM/YYYY"
+                                className="px-2 py-1 border border-gray-300 rounded text-sm w-28"
+                              />
+                            ) : (
+                              group.date
+                            )}
+                          </td>
+                          <td className="px-3 py-2 text-sm text-gray-900 font-medium">
+                            {isEditingSingle && editingRow ? (
+                              <input
+                                type="text"
+                                value={editingRow.denominationUsuelle || editingRow['Libellé Ressource'] || ''}
+                                onChange={(e) => setEditingRow({ ...editingRow, denominationUsuelle: e.target.value, 'Libellé Ressource': e.target.value })}
+                                className="px-2 py-1 border border-gray-300 rounded text-sm w-full"
+                              />
+                            ) : (
+                              group.denomination
+                            )}
+                          </td>
+                          <td className="px-3 py-2 text-center whitespace-nowrap text-sm text-gray-900 font-medium">
+                            {isEditingSingle && editingRow ? (
+                              <input
+                                type="number"
+                                value={editingRow.quantite || 0}
+                                onChange={(e) => setEditingRow({ ...editingRow, quantite: Number(e.target.value) })}
+                                min="0"
+                                step="0.01"
+                                className="px-2 py-1 border border-gray-300 rounded text-sm w-20 text-center"
+                              />
+                            ) : (
+                              group.quantiteTotal.toFixed(2)
+                            )}
+                          </td>
+                          <td className="px-3 py-2 text-center whitespace-nowrap text-sm text-gray-900">
+                            {isEditingSingle && editingRow ? (
+                              <select
+                                value={editingRow.codeUnite || editingRow.unite || 'T'}
+                                onChange={(e) => setEditingRow({ ...editingRow, codeUnite: e.target.value, unite: e.target.value })}
+                                className="px-2 py-1 border border-gray-300 rounded text-sm"
+                              >
+                                <option value="T">T</option>
+                                <option value="kg">kg</option>
+                                <option value="m³">m³</option>
+                                <option value="L">L</option>
+                              </select>
+                            ) : (
+                              group.unite
+                            )}
+                          </td>
+                          <td className="px-3 py-2 text-center whitespace-nowrap text-sm">
+                            {isEditingSingle && editingRow ? (
+                              <input
+                                type="text"
+                                value={editingRow.codeDechet || ''}
+                                onChange={(e) => {
+                                  const inputValue = e.target.value;
+                                  // Détecter si le code contient un astérisque
+                                  const { code, danger } = parseCodeDechetWithDanger(inputValue);
+                                  const normalized = normalizeCode(code);
+                                  setEditingRow({ 
+                                    ...editingRow, 
+                                    codeDechet: normalized,
+                                    danger: danger || editingRow.danger
+                                  });
+                                }}
+                                className="px-2 py-1 border border-gray-300 rounded text-sm font-mono w-24"
+                                placeholder="000000"
+                                maxLength={7}
+                              />
+                            ) : hasValidCode ? (
+                              <span className="px-2 py-1 bg-green-100 text-green-800 rounded font-mono">
+                                {group.codeDechet}
+                              </span>
+                            ) : (
+                              <span className="text-gray-400">-</span>
+                            )}
+                          </td>
+                          <td className="px-3 py-2 text-center whitespace-nowrap text-sm">
+                            {isEditingSingle && editingRow ? (
+                              <input
+                                type="checkbox"
+                                checked={editingRow.danger === true}
+                                onChange={(e) => setEditingRow({ ...editingRow, danger: e.target.checked })}
+                                className="w-4 h-4 text-red-600 border-gray-300 rounded focus:ring-red-500"
+                                title="Déchet dangereux"
+                              />
+                            ) : (
+                              <input
+                                type="checkbox"
+                                checked={singleItem?.danger === true}
+                                onChange={(e) => {
+                                  if (singleItem?.__id) {
+                                    const updated = localData.map(r =>
+                                      r.__id === singleItem.__id ? { ...r, danger: e.target.checked } : r
                                     );
-                                  })}
-                                </tbody>
-                              </table>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
+                                    setLocalData(updated);
+                                    if (onDataChange) onDataChange(updated);
+                                  }
+                                }}
+                                className="w-4 h-4 text-red-600 border-gray-300 rounded focus:ring-red-500"
+                                title="Déchet dangereux"
+                              />
+                            )}
+                          </td>
+                          <td className="px-3 py-2 text-center whitespace-nowrap text-sm">
+                            {hasMultipleItems ? (
+                              <div className="flex gap-2 justify-center items-center">
+                                <button
+                                  onClick={() => handleOpenTransportModal(group.items)}
+                                  className="p-1.5 text-gray-600 hover:text-purple-600 hover:bg-purple-50 border border-gray-300 rounded transition-colors"
+                                  title="Informations de transport"
+                                >
+                                  🚛
+                                </button>
+                                <button
+                                  onClick={() => toggleGroup(fullGroupKey)}
+                                  className="px-2 py-1 text-xs text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded transition-colors"
+                                >
+                                  {isGroupExpanded ? '▼ Réduire' : '▶ Voir détails'}
+                                </button>
+                              </div>
+                            ) : singleItem ? (
+                              isEditingSingle ? (
+                                <div className="flex gap-2 justify-center">
+                                  <button
+                                    onClick={handleSaveEdit}
+                                    className="px-2 py-1 bg-green-600 text-white rounded text-xs hover:bg-green-700"
+                                    title="Valider"
+                                  >
+                                    ✓
+                                  </button>
+                                  <button
+                                    onClick={handleCancelEdit}
+                                    className="px-2 py-1 bg-gray-400 text-white rounded text-xs hover:bg-gray-500"
+                                    title="Annuler"
+                                  >
+                                    ✗
+                                  </button>
+                                </div>
+                              ) : (
+                                <div className="flex gap-2 justify-center">
+                                  <button
+                                    onClick={() => handleOpenTransportModal([singleItem])}
+                                    className="p-1.5 text-gray-600 hover:text-purple-600 hover:bg-purple-50 border border-gray-300 rounded transition-colors"
+                                    title="Informations de transport"
+                                  >
+                                    🚛
+                                  </button>
+                                  <button
+                                    onClick={() => handleEdit(singleItem)}
+                                    className="p-1.5 text-gray-600 hover:text-blue-600 hover:bg-blue-50 border border-gray-300 rounded transition-colors"
+                                    title="Modifier"
+                                  >
+                                    <EditIcon className="w-4 h-4" />
+                                  </button>
+                                  <button
+                                    onClick={() => singleItem.__id && handleDelete(singleItem.__id)}
+                                    className="p-1.5 text-gray-600 hover:text-red-600 hover:bg-red-50 border border-gray-300 rounded transition-colors"
+                                    title="Supprimer"
+                                  >
+                                    <TrashIcon className="w-4 h-4" />
+                                  </button>
+                                </div>
+                              )
+                            ) : null}
+                          </td>
+                        </tr>
+                        {isGroupExpanded && sortedItems.map((item, itemIdx) => {
+                          const isEditing = editingRow?.__id === item.__id;
+                          const itemHasCode = item.codeDechet && item.codeDechet.trim().length === 6;
+                          return (
+                            <tr key={item.__id || `item-${itemIdx}`} className={`hover:bg-gray-50 ${itemHasCode ? '' : 'bg-red-50'}`}>
+                              <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-600 pl-6">
+                                {isEditing && editingRow ? (
+                                  <input
+                                    type="text"
+                                    value={editingRow.dateExpedition || ''}
+                                    onChange={(e) => setEditingRow({ ...editingRow, dateExpedition: e.target.value })}
+                                    placeholder="DD/MM/YYYY"
+                                    className="px-2 py-1 border border-gray-300 rounded text-sm w-28"
+                                  />
+                                ) : (
+                                  formatDate(item.dateExpedition)
+                                )}
+                              </td>
+                              <td className="px-3 py-2 text-sm text-gray-600">
+                                {isEditing && editingRow ? (
+                                  <input
+                                    type="text"
+                                    value={editingRow.denominationUsuelle || editingRow['Libellé Ressource'] || ''}
+                                    onChange={(e) => setEditingRow({ ...editingRow, denominationUsuelle: e.target.value, 'Libellé Ressource': e.target.value })}
+                                    className="px-2 py-1 border border-gray-300 rounded text-sm w-full"
+                                  />
+                                ) : (
+                                  item.denominationUsuelle || item['Libellé Ressource'] || '-'
+                                )}
+                              </td>
+                              <td className="px-3 py-2 text-center whitespace-nowrap text-sm text-gray-600">
+                                {isEditing && editingRow ? (
+                                  <input
+                                    type="number"
+                                    value={editingRow.quantite || 0}
+                                    onChange={(e) => setEditingRow({ ...editingRow, quantite: Number(e.target.value) })}
+                                    min="0"
+                                    step="0.01"
+                                    className="px-2 py-1 border border-gray-300 rounded text-sm w-20 text-center"
+                                  />
+                                ) : (
+                                  item.quantite || 0
+                                )}
+                              </td>
+                              <td className="px-3 py-2 text-center whitespace-nowrap text-sm text-gray-600">
+                                {isEditing && editingRow ? (
+                                  <select
+                                    value={editingRow.codeUnite || editingRow.unite || 'T'}
+                                    onChange={(e) => setEditingRow({ ...editingRow, codeUnite: e.target.value, unite: e.target.value })}
+                                    className="px-2 py-1 border border-gray-300 rounded text-sm"
+                                  >
+                                    <option value="T">T</option>
+                                    <option value="kg">kg</option>
+                                    <option value="m³">m³</option>
+                                    <option value="L">L</option>
+                                  </select>
+                                ) : (
+                                  item.codeUnite || item.unite || 'T'
+                                )}
+                              </td>
+                              <td className="px-3 py-2 text-center whitespace-nowrap text-sm">
+                                {isEditing && editingRow ? (
+                                  <input
+                                    type="text"
+                                    value={editingRow.codeDechet || ''}
+                                    onChange={(e) => {
+                                      const inputValue = e.target.value;
+                                      // Détecter si le code contient un astérisque
+                                      const { code, danger } = parseCodeDechetWithDanger(inputValue);
+                                      const normalized = normalizeCode(code);
+                                      setEditingRow({ 
+                                        ...editingRow, 
+                                        codeDechet: normalized,
+                                        danger: danger || editingRow.danger
+                                      });
+                                    }}
+                                    className="px-2 py-1 border border-gray-300 rounded text-sm font-mono w-24"
+                                    placeholder="000000"
+                                    maxLength={7}
+                                  />
+                                ) : itemHasCode ? (
+                                  <span className="px-2 py-1 bg-green-100 text-green-800 rounded font-mono">
+                                    {item.codeDechet}
+                                  </span>
+                                ) : (
+                                  <span className="text-gray-400">-</span>
+                                )}
+                              </td>
+                              <td className="px-3 py-2 text-center whitespace-nowrap text-sm">
+                                {isEditing && editingRow ? (
+                                  <input
+                                    type="checkbox"
+                                    checked={editingRow.danger === true}
+                                    onChange={(e) => setEditingRow({ ...editingRow, danger: e.target.checked })}
+                                    className="w-4 h-4 text-red-600 border-gray-300 rounded focus:ring-red-500"
+                                    title="Déchet dangereux"
+                                  />
+                                ) : (
+                                  <input
+                                    type="checkbox"
+                                    checked={item.danger === true}
+                                    onChange={(e) => {
+                                      if (item.__id) {
+                                        const updated = localData.map(r =>
+                                          r.__id === item.__id ? { ...r, danger: e.target.checked } : r
+                                        );
+                                        setLocalData(updated);
+                                        if (onDataChange) onDataChange(updated);
+                                      }
+                                    }}
+                                    className="w-4 h-4 text-red-600 border-gray-300 rounded focus:ring-red-500"
+                                    title="Déchet dangereux"
+                                  />
+                                )}
+                              </td>
+                              <td className="px-3 py-2 text-center whitespace-nowrap text-sm">
+                                {isEditing && editingRow ? (
+                                  <div className="flex gap-2 justify-center">
+                                    <button
+                                      onClick={handleSaveEdit}
+                                      className="px-2 py-1 bg-green-600 text-white rounded text-xs hover:bg-green-700"
+                                      title="Valider"
+                                    >
+                                      ✓
+                                    </button>
+                                    <button
+                                      onClick={handleCancelEdit}
+                                      className="px-2 py-1 bg-gray-400 text-white rounded text-xs hover:bg-gray-500"
+                                      title="Annuler"
+                                    >
+                                      ✗
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <div className="flex gap-2 justify-center">
+                                    <button
+                                      onClick={() => handleOpenTransportModal([item])}
+                                      className="p-1.5 text-gray-600 hover:text-purple-600 hover:bg-purple-50 border border-gray-300 rounded transition-colors"
+                                      title="Informations de transport"
+                                    >
+                                      🚛
+                                    </button>
+                                    <button
+                                      onClick={() => handleEdit(item)}
+                                      className="p-1.5 text-gray-600 hover:text-blue-600 hover:bg-blue-50 border border-gray-300 rounded transition-colors"
+                                      title="Modifier"
+                                    >
+                                      <EditIcon className="w-4 h-4" />
+                                    </button>
+                                    <button
+                                      onClick={() => item.__id && handleDelete(item.__id)}
+                                      className="p-1.5 text-gray-600 hover:text-red-600 hover:bg-red-50 border border-gray-300 rounded transition-colors"
+                                      title="Supprimer"
+                                    >
+                                      <TrashIcon className="w-4 h-4" />
+                                    </button>
+                                  </div>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </>
                     );
-                  })()}
-                </>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        );
+      })}
+
+      {/* Modal pour afficher les informations de transport */}
+      {modalOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" onClick={() => setModalOpen(false)}>
+          <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[80vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="p-6">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-xl font-semibold text-gray-900">Informations de transport</h3>
+                <button
+                  onClick={() => setModalOpen(false)}
+                  className="text-gray-400 hover:text-gray-600 transition-colors"
+                  title="Fermer"
+                >
+                  ✕
+                </button>
+              </div>
+              
+              <div className="space-y-4">
+                {modalData.map((item, idx) => {
+                  const exutoire = item.exutoire || item['destinataire.raisonSociale'] || item['Libellé Fournisseur'] || item['Libelle Fournisseur'] || 'Non renseigné';
+                  const truckType = extractTruckType(item);
+                  
+                  return (
+                    <div key={item.__id || idx} className="border border-gray-200 rounded-lg p-4">
+                      <div className="space-y-2">
+                        <div>
+                          <span className="text-sm font-medium text-gray-700">Exutoire :</span>
+                          <span className="ml-2 text-sm text-gray-900">{exutoire}</span>
+                        </div>
+                        <div>
+                          <span className="text-sm font-medium text-gray-700">Type de camion :</span>
+                          <span className="ml-2 text-sm text-gray-900">{truckType}</span>
+                        </div>
+                        {item.denominationUsuelle && (
+                          <div>
+                            <span className="text-sm font-medium text-gray-700">Dénomination :</span>
+                            <span className="ml-2 text-sm text-gray-900">{item.denominationUsuelle}</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              
+              <div className="mt-6 flex justify-end">
+                <button
+                  onClick={() => setModalOpen(false)}
+                  className="px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700 transition-colors"
+                >
+                  Fermer
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
