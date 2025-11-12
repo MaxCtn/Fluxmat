@@ -13,8 +13,6 @@ export default function ImportPage() {
   const [registre, setRegistre] = useState<any[]>([]);
   const [controle, setControle] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
-  const [filterAgence, setFilterAgence] = useState<string>('toutes');
-  const [filterStatus, setFilterStatus] = useState<string>('toutes');
 
   // Charger les données depuis sessionStorage au montage
   useEffect(() => {
@@ -55,17 +53,6 @@ export default function ImportPage() {
     router.push('/controle');
   }
 
-  // Récupérer toutes les agences uniques
-  const agences = useMemo(() => {
-    const allRows = [...registre, ...controle];
-    const agencesSet = new Set<string>();
-    allRows.forEach(row => {
-      const agence = row['producteur.raisonSociale'] || row['Libellé Entité'] || '';
-      if (agence) agencesSet.add(agence);
-    });
-    return Array.from(agencesSet).sort();
-  }, [registre, controle]);
-
   // Toutes les lignes (pour les compteurs - toujours affichées sans filtres)
   const toutesLesLignes = useMemo(() => {
     return [...registre, ...controle];
@@ -75,28 +62,6 @@ export default function ImportPage() {
   const totalLignes = toutesLesLignes.length;
   const lignesValidees = toutesLesLignes.filter(r => r.codeDechet && r.codeDechet.trim().length === 6).length;
   const lignesATraiter = toutesLesLignes.filter(r => !r.codeDechet || r.codeDechet.trim() === '' || r.codeDechet.length !== 6).length;
-
-  // Filtrer les lignes selon les filtres (uniquement pour le tableau en bas)
-  const lignesFiltrees = useMemo(() => {
-    let filtered = [...registre, ...controle];
-    
-    // Filtrer par agence
-    if (filterAgence !== 'toutes') {
-      filtered = filtered.filter(row => {
-        const agence = row['producteur.raisonSociale'] || row['Libellé Entité'] || '';
-        return agence === filterAgence;
-      });
-    }
-    
-    // Filtrer par statut
-    if (filterStatus === 'bonnes') {
-      filtered = filtered.filter(row => row.codeDechet && row.codeDechet.trim().length === 6);
-    } else if (filterStatus === 'pas_bonnes') {
-      filtered = filtered.filter(row => !row.codeDechet || row.codeDechet.trim() === '' || row.codeDechet.length !== 6);
-    }
-    
-    return filtered;
-  }, [registre, controle, filterAgence, filterStatus]);
 
   return (
     <main className="min-h-dvh bg-gray-50">
@@ -181,45 +146,6 @@ export default function ImportPage() {
               <p className="text-sm text-blue-900">
                 📊 <strong>Total: {totalLignes} lignes</strong> ({lignesValidees} validées, {lignesATraiter} à traiter)
               </p>
-            </div>
-          </div>
-        )}
-
-        {/* Filtres */}
-        {totalLignes > 0 && (
-          <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm mb-8">
-            <h2 className="text-xl font-semibold mb-4 text-gray-900">Filtres</h2>
-            <div className="flex flex-wrap items-center gap-4">
-              {/* Filtre agence */}
-              {agences.length > 0 && (
-                <div className="flex items-center gap-2">
-                  <label className="text-sm font-medium text-gray-700">Agence:</label>
-                  <select
-                    value={filterAgence}
-                    onChange={(e) => setFilterAgence(e.target.value)}
-                    className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-red-500"
-                  >
-                    <option value="toutes">Toutes les agences ({agences.length})</option>
-                    {agences.map((ag) => (
-                      <option key={ag} value={ag}>{ag}</option>
-                    ))}
-                  </select>
-                </div>
-              )}
-
-              {/* Filtre statut */}
-              <div className="flex items-center gap-2">
-                <label className="text-sm font-medium text-gray-700">Statut:</label>
-                <select
-                  value={filterStatus}
-                  onChange={(e) => setFilterStatus(e.target.value)}
-                  className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-red-500"
-                >
-                  <option value="toutes">Toutes les lignes</option>
-                  <option value="bonnes">Lignes bonnes (avec code)</option>
-                  <option value="pas_bonnes">Lignes pas bonnes (sans code)</option>
-                </select>
-              </div>
             </div>
           </div>
         )}

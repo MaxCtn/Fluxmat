@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import Toast from './Toast';
+import { suggestCodeDechet } from '@/lib/wasteUtils';
 
 function normalizeCode(v: string) { return (v || '').replace(/\D/g, '').slice(0, 6); }
 
@@ -32,26 +33,67 @@ export default function ControlTable({ rows, onValidate }: { rows: any[]; onVali
     setAllRows(updatedRows);
   }, [rows]);
 
-  const rowsARegler = allRows.filter(r => !r.codeDechet || r.codeDechet.length !== 6);
+  // Catégoriser les lignes
   const rowsValidees = allRows.filter(r => r.codeDechet && r.codeDechet.length === 6);
+  const rowsAvecSuggestion = allRows.filter(r => {
+    if (r.codeDechet && r.codeDechet.length === 6) return false; // Déjà validée
+    const label = r.denominationUsuelle || r['Libellé Ressource'] || '';
+    const match = suggestCodeDechet(label);
+    return match !== null;
+  });
+  const rowsADefinir = allRows.filter(r => {
+    if (r.codeDechet && r.codeDechet.length === 6) return false; // Déjà validée
+    const label = r.denominationUsuelle || r['Libellé Ressource'] || '';
+    const match = suggestCodeDechet(label);
+    return match === null;
+  });
+
+  // Fonction pour suggérer le code déchet d'une ligne
+  function getSuggestionForRow(row: any): string | null {
+    const label = row.denominationUsuelle || row['Libellé Ressource'] || '';
+    const match = suggestCodeDechet(label);
+    return match ? match.codeCED : null;
+  }
 
   function autoCompleteAll() {
     let count = 0;
     const updated = allRows.map(row => {
-      if (row.suggestionCodeDechet) {
-        const prevCode = row.codeDechet;
-        const hasValidCode = prevCode && prevCode.trim().length === 6;
-        
-        // Toujours remplacer par la suggestion, même si code déjà présent
-        if (!hasValidCode) {
-          count++;
-        }
-        return { ...row, codeDechet: row.suggestionCodeDechet };
+      // Ignorer les lignes qui ont déjà un code déchet valide
+      if (row.codeDechet && row.codeDechet.length === 6) {
+        return row;
       }
-      return row;
+      
+      // Calculer la suggestion avec le nouveau système
+      const suggestion = getSuggestionForRow(row);
+      
+      if (suggestion) {
+        count++;
+        return { ...row, codeDechet: suggestion };
+      }
+      
+      // Si aucune suggestion, marquer comme "à définir"
+      return { ...row, __categorie: 'à définir' };
     });
     setAllRows(updated);
     setToastMessage(`${count} lignes auto-complétées avec succès !`);
+  }
+
+  function handleAutoForRow(row: any) {
+    const suggestion = getSuggestionForRow(row);
+    if (suggestion) {
+      const updated = allRows.map(r => 
+        r.__id === row.__id ? { ...r, codeDechet: suggestion } : r
+      );
+      setAllRows(updated);
+      setToastMessage(`Code déchet ${suggestion} appliqué !`);
+    } else {
+      // Marquer comme "à définir"
+      const updated = allRows.map(r => 
+        r.__id === row.__id ? { ...r, __categorie: 'à définir' } : r
+      );
+      setAllRows(updated);
+      setToastMessage(`Aucune suggestion trouvée - ligne marquée "à définir"`);
+    }
   }
 
   function handleModify(row: any) {
@@ -86,7 +128,7 @@ export default function ControlTable({ rows, onValidate }: { rows: any[]; onVali
           <button
             onClick={autoCompleteAll}
             className="rounded-lg bg-blue-100 text-blue-700 px-4 py-2 text-sm font-medium hover:bg-blue-200 transition shadow-md hover:shadow-lg disabled:opacity-50"
-            disabled={rowsARegler.length === 0}
+            disabled={rowsAvecSuggestion.length === 0 && rowsADefinir.length === 0}
           >
             ✨ Auto-compléter toutes les lignes
           </button>
@@ -109,16 +151,16 @@ export default function ControlTable({ rows, onValidate }: { rows: any[]; onVali
         </button>
       </div>
 
-      {/* Tableau 1: Lignes à traiter (ROUGE) */}
-      {rowsARegler.length > 0 && (
-        <div className="border-2 border-red-400 rounded-xl p-6 bg-red-50 animate-fade-in">
-          <h3 className="text-lg font-semibold text-red-800 mb-4">
-            🔴 Lignes sans code déchet ({rowsARegler.length})
+      {/* Tableau 1: Lignes avec suggestion (ORANGE) */}
+      {rowsAvecSuggestion.length > 0 && (
+        <div className="border-2 border-orange-400 rounded-xl p-6 bg-orange-50 animate-fade-in">
+          <h3 className="text-lg font-semibold text-orange-800 mb-4">
+            🟠 Lignes avec suggestion ({rowsAvecSuggestion.length})
           </h3>
           <div className="overflow-x-auto">
             <table className="table w-full">
-              <thead className="bg-red-100">
-                <tr className="border-b-2 border-red-300">
+              <thead className="bg-orange-100">
+                <tr className="border-b-2 border-orange-300">
                   <th className="px-3 py-2 text-left">Date</th>
                   <th className="px-3 py-2 text-left max-w-[300px]">Ressource</th>
                   <th className="px-3 py-2 text-left">Entité</th>
@@ -130,9 +172,93 @@ export default function ControlTable({ rows, onValidate }: { rows: any[]; onVali
                   {editMode && <th className="px-3 py-2 text-center">Actions</th>}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-red-200">
-                {rowsARegler.map((r, i) => (
-                  <tr key={r.__id ?? `red-${i}`} className="bg-white hover:bg-red-50 transition">
+              <tbody className="divide-y divide-orange-200">
+                {rowsAvecSuggestion.map((r, i) => {
+                  const suggestion = getSuggestionForRow(r);
+                  return (
+                    <tr key={r.__id ?? `orange-${i}`} className="bg-white hover:bg-orange-50 transition">
+                      <td className="px-3 py-2">{formatDate(r.dateExpedition ?? r.Date ?? '')}</td>
+                      <td className="px-3 py-2 max-w-[300px] truncate">{r.denominationUsuelle ?? r['Libellé Ressource'] ?? ''}</td>
+                      <td className="px-3 py-2 truncate max-w-[150px]">{r['producteur.raisonSociale'] ?? r['Libellé Entité'] ?? ''}</td>
+                      <td className="px-3 py-2 truncate max-w-[150px]">{r['producteur.adresse.libelle'] ?? r['Libellé Chantier'] ?? ''}</td>
+                      <td className="px-3 py-2 text-center">{r.quantite ?? r.Quantité ?? ''}</td>
+                      <td className="px-3 py-2 text-center">{r.codeUnite ?? r.Unité ?? ''}</td>
+                      <td className="px-3 py-2">
+                        <input
+                          className="input w-24 text-center"
+                          placeholder={suggestion || "170302"}
+                          value={r.codeDechet ?? ''}
+                          onChange={(e) => {
+                            const idx = allRows.findIndex(row => row.__id === r.__id);
+                            if (idx >= 0) {
+                              const next = [...allRows];
+                              next[idx].codeDechet = normalizeCode(e.target.value);
+                              setAllRows(next);
+                            }
+                          }}
+                        />
+                      </td>
+                      <td className="px-3 py-2 text-center">
+                        <button
+                          className="rounded-lg px-3 py-1 text-sm font-medium bg-slate-100 text-slate-700 hover:bg-slate-200 transition border border-slate-300"
+                          onClick={() => handleAutoForRow(r)}
+                        >
+                          Auto
+                        </button>
+                      </td>
+                      {editMode && (
+                        <td className="px-3 py-2 text-center">
+                          <div className="flex gap-2 justify-center">
+                            <button
+                              onClick={() => handleModify(r)}
+                              className="rounded px-2 py-1 text-slate-600 hover:bg-slate-100 transition border border-slate-300"
+                              title="Modifier"
+                            >
+                              ✏️
+                            </button>
+                            <button
+                              onClick={() => setConfirmDelete(r.__id ?? i.toString())}
+                              className="rounded px-2 py-1 text-slate-600 hover:bg-slate-100 transition border border-slate-300"
+                              title="Supprimer"
+                            >
+                              🗑️
+                            </button>
+                          </div>
+                        </td>
+                      )}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Tableau 2: Lignes à définir (GRIS) */}
+      {rowsADefinir.length > 0 && (
+        <div className="border-2 border-gray-400 rounded-xl p-6 bg-gray-50 animate-fade-in">
+          <h3 className="text-lg font-semibold text-gray-800 mb-4">
+            ⚪ Lignes à définir ({rowsADefinir.length})
+          </h3>
+          <div className="overflow-x-auto">
+            <table className="table w-full">
+              <thead className="bg-gray-100">
+                <tr className="border-b-2 border-gray-300">
+                  <th className="px-3 py-2 text-left">Date</th>
+                  <th className="px-3 py-2 text-left max-w-[300px]">Ressource</th>
+                  <th className="px-3 py-2 text-left">Entité</th>
+                  <th className="px-3 py-2 text-left">Chantier</th>
+                  <th className="px-3 py-2 text-center">Qté</th>
+                  <th className="px-3 py-2 text-center">Unit</th>
+                  <th className="px-3 py-2 text-center">Code</th>
+                  <th className="px-3 py-2 text-center">Auto</th>
+                  {editMode && <th className="px-3 py-2 text-center">Actions</th>}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-200">
+                {rowsADefinir.map((r, i) => (
+                  <tr key={r.__id ?? `gray-${i}`} className="bg-white hover:bg-gray-50 transition">
                     <td className="px-3 py-2">{formatDate(r.dateExpedition ?? r.Date ?? '')}</td>
                     <td className="px-3 py-2 max-w-[300px] truncate">{r.denominationUsuelle ?? r['Libellé Ressource'] ?? ''}</td>
                     <td className="px-3 py-2 truncate max-w-[150px]">{r['producteur.raisonSociale'] ?? r['Libellé Entité'] ?? ''}</td>
@@ -142,7 +268,7 @@ export default function ControlTable({ rows, onValidate }: { rows: any[]; onVali
                     <td className="px-3 py-2">
                       <input
                         className="input w-24 text-center"
-                        placeholder="170302"
+                        placeholder="Manuel"
                         value={r.codeDechet ?? ''}
                         onChange={(e) => {
                           const idx = allRows.findIndex(row => row.__id === r.__id);
@@ -156,16 +282,9 @@ export default function ControlTable({ rows, onValidate }: { rows: any[]; onVali
                     </td>
                     <td className="px-3 py-2 text-center">
                       <button
-                        className="rounded-lg px-3 py-1 text-sm font-medium bg-blue-100 text-blue-700 hover:bg-blue-200 transition"
-                        disabled={!r.suggestionCodeDechet}
-                        onClick={() => {
-                          const idx = allRows.findIndex(row => row.__id === r.__id);
-                          if (idx >= 0 && r.suggestionCodeDechet) {
-                            const next = [...allRows];
-                            next[idx].codeDechet = r.suggestionCodeDechet;
-                            setAllRows(next);
-                          }
-                        }}
+                        className="rounded-lg px-3 py-1 text-sm font-medium bg-slate-100 text-slate-700 hover:bg-slate-200 transition border border-slate-300"
+                        onClick={() => handleAutoForRow(r)}
+                        title="Aucune suggestion disponible"
                       >
                         Auto
                       </button>
@@ -175,14 +294,14 @@ export default function ControlTable({ rows, onValidate }: { rows: any[]; onVali
                         <div className="flex gap-2 justify-center">
                           <button
                             onClick={() => handleModify(r)}
-                            className="rounded px-2 py-1 text-blue-600 hover:bg-blue-50 transition"
+                            className="rounded px-2 py-1 text-slate-600 hover:bg-slate-100 transition border border-slate-300"
                             title="Modifier"
                           >
                             ✏️
                           </button>
                           <button
                             onClick={() => setConfirmDelete(r.__id ?? i.toString())}
-                            className="rounded px-2 py-1 text-red-600 hover:bg-red-50 transition"
+                            className="rounded px-2 py-1 text-slate-600 hover:bg-slate-100 transition border border-slate-300"
                             title="Supprimer"
                           >
                             🗑️
@@ -198,7 +317,7 @@ export default function ControlTable({ rows, onValidate }: { rows: any[]; onVali
         </div>
       )}
 
-      {/* Tableau 2: Lignes validées (VERT) */}
+      {/* Tableau 3: Lignes validées (VERT) */}
       {rowsValidees.length > 0 && (
         <div className="border-2 border-green-400 rounded-xl p-6 bg-green-50 animate-fade-in">
           <h3 className="text-lg font-semibold text-green-800 mb-4">
