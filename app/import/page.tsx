@@ -2,7 +2,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import FileDrop from '../../components/FileDrop';
-import ExutoireSummary from '../../components/ExutoireSummary';
+import HierarchicalTreeView from '../../components/HierarchicalTreeView';
 import Header from '../../components/Header';
 import Footer from '../../components/Footer';
 import { useRouter } from 'next/navigation';
@@ -224,12 +224,24 @@ export default function ImportPage() {
           </div>
         )}
 
-        {/* Synthèse par exutoire */}
+        {/* Vue hiérarchique avec regroupement et tri */}
         {totalLignes > 0 && (
-          <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm mb-8">
-            <h2 className="text-xl font-semibold mb-4 text-gray-900">Synthèse par exutoire (carrière)</h2>
-            <ExutoireSummary sourceRows={lignesFiltrees} />
-          </div>
+          <HierarchicalTreeView
+            data={toutesLesLignes}
+            onDataChange={(updatedData) => {
+              // Séparer les données mises à jour en registre et controle
+              const newRegistre = updatedData.filter(r => r.codeDechet && r.codeDechet.trim().length === 6);
+              const newControle = updatedData.filter(r => !r.codeDechet || r.codeDechet.trim().length !== 6);
+              setRegistre(newRegistre);
+              setControle(newControle);
+              // Mettre à jour sessionStorage
+              sessionStorage.setItem('fluxmat_data', JSON.stringify({
+                registre: newRegistre,
+                controle: newControle,
+                fileName
+              }));
+            }}
+          />
         )}
       </section>
 
