@@ -4,18 +4,24 @@ import { getSupabaseServer } from '../../../../lib/supabaseServer';
 export const runtime = "nodejs";
 
 export async function POST(req: NextRequest){
-  const supabase = getSupabaseServer();
-  if (!supabase) return NextResponse.json({ error: "Supabase non configuré" }, { status: 200 });
+  try {
+    const supabase = getSupabaseServer();
+    if (!supabase) {
+      return NextResponse.json({ 
+        error: "Supabase non configuré. Veuillez configurer NEXT_PUBLIC_SUPABASE_URL et SUPABASE_SERVICE_ROLE_KEY dans votre fichier .env.local",
+        type: 'missing_env_vars'
+      }, { status: 500 });
+    }
 
-  const body = await req.json().catch(()=> ({}));
-  const rows = body?.rows as any[] || [];
-  if (!rows.length) return NextResponse.json({ ok: true, inserted: 0 });
+    const body = await req.json().catch(()=> ({}));
+    const rows = body?.rows as any[] || [];
+    if (!rows.length) return NextResponse.json({ ok: true, inserted: 0 });
 
-  console.log(`[SAVE] Reçu ${rows.length} lignes à sauvegarder`);
-  console.log(`[SAVE] Première ligne exemple:`, JSON.stringify(rows[0], null, 2));
+    console.log(`[SAVE] Reçu ${rows.length} lignes à sauvegarder`);
+    console.log(`[SAVE] Première ligne exemple:`, JSON.stringify(rows[0], null, 2));
 
-  // Map TOUTES les données, même les colonnes vides
-  const payload = rows.map(r => {
+    // Map TOUTES les données, même les colonnes vides
+    const payload = rows.map(r => {
     // Fonction helper pour nettoyer les valeurs
     const cleanValue = (value: any) => {
       if (value === undefined || value === null) return null;
@@ -105,26 +111,67 @@ export async function POST(req: NextRequest){
     };
   });
 
-  console.log(`[SAVE] Payload préparé avec ${payload.length} éléments`);
-  console.log(`[SAVE] Première ligne payload:`, JSON.stringify(payload[0], null, 2));
-  console.log(`[SAVE] Colonnes dans le payload:`, Object.keys(payload[0]));
+    console.log(`[SAVE] Payload préparé avec ${payload.length} éléments`);
+    console.log(`[SAVE] Première ligne payload:`, JSON.stringify(payload[0], null, 2));
+    console.log(`[SAVE] Colonnes dans le payload:`, Object.keys(payload[0]));
 
-  const { error } = await supabase.from('depenses_completes').insert(payload);
+    // Mapper vers registre_flux (table principale)
+    const registrePayload = payload.map(r => ({
+      code_entite: r.code_entite,
+      libelle_entite: r.libelle_entite,
+      code_chantier: r.code_chantier,
+      libelle_chantier: r.libelle_chantier,
+      date_expedition: r.date_expedition,
+      quantite: r.quantite || 0,
+      unite: r.unite || 'T',
+      libelle_ressource: r.libelle_ressource,
+      code_dechet: r.code_dechet,
+      exutoire: r.libelle_fournisseur || null,
+      code_fournisseur: r.code_fournisseur,
+      libelle_fournisseur: r.libelle_fournisseur,
+      origine: r.origine,
+      code_chapitre_comptable: r.code_chapitre_comptable,
+      libelle_chapitre_comptable: r.libelle_chapitre_comptable,
+      code_rubrique_comptable: r.code_rubrique_comptable,
+      libelle_rubrique_comptable: r.libelle_rubrique_comptable,
+      num_commande: r.num_commande,
+      num_reception: r.num_reception,
+      code_facture: r.code_facture,
+      pu: r.pu || 0,
+      montant: r.montant || 0,
+      source_name: 'export-save',
+      created_by: 'système'
+    }));
+
+    const { data, error } = await supabase
+      .from('registre_flux')
+      .insert(registrePayload)
+      .select();
   
-  if (error) {
-    console.error(`[SAVE] Erreur Supabase:`, error);
-    console.error(`[SAVE] Code erreur:`, error.code);
-    console.error(`[SAVE] Message:`, error.message);
-    console.error(`[SAVE] Détails:`, error.details);
-    console.error(`[SAVE] Hint:`, error.hint);
+    if (error) {
+      console.error(`[SAVE] Erreur Supabase:`, error);
+      console.error(`[SAVE] Code erreur:`, error.code);
+      console.error(`[SAVE] Message:`, error.message);
+      console.error(`[SAVE] Détails:`, error.details);
+      console.error(`[SAVE] Hint:`, error.hint);
+      return NextResponse.json({ 
+        error: error.message, 
+        code: error.code,
+        details: error.details,
+        hint: error.hint 
+      }, { status: 500 });
+    }
+
+    console.log(`[SAVE] Succès: ${data?.length || registrePayload.length} lignes insérées`);
     return NextResponse.json({ 
-      error: error.message, 
-      code: error.code,
-      details: error.details,
-      hint: error.hint 
+      ok: true, 
+      inserted: data?.length || registrePayload.length 
+    });
+  } catch (error: any) {
+    console.error('[SAVE] Erreur générale:', error);
+    return NextResponse.json({ 
+      error: error.message || 'Erreur serveur',
+      type: 'general_error'
     }, { status: 500 });
   }
-
-  console.log(`[SAVE] Succès: ${payload.length} lignes insérées`);
-  return NextResponse.json({ ok: true, inserted: payload.length });
 }

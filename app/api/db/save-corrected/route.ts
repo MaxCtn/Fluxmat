@@ -5,7 +5,12 @@ export const runtime = "nodejs";
 
 export async function POST(req: NextRequest){
   const supabase = getSupabaseServer();
-  if (!supabase) return NextResponse.json({ error: "Supabase non configuré" }, { status: 200 });
+  if (!supabase) {
+    return NextResponse.json({ 
+      error: "Supabase non configuré. Veuillez configurer NEXT_PUBLIC_SUPABASE_URL et SUPABASE_SERVICE_ROLE_KEY dans votre fichier .env.local",
+      type: 'missing_env_vars'
+    }, { status: 500 });
+  }
 
   const body = await req.json().catch(()=> ({}));
   const rows = body?.rows as any[] || [];
@@ -59,6 +64,8 @@ export async function POST(req: NextRequest){
       libelle_ouvrage_actuel: cleanValue(r.libelle_ouvrage_actuel),
       
       // Comptabilité/Gestion (seulement les colonnes qui existent)
+      code_chapitre_comptable: cleanValue(r.code_chapitre_comptable),
+      libelle_chapitre_comptable: cleanValue(r.libelle_chapitre_comptable),
       code_rubrique_comptable: cleanValue(r.code_rubrique_comptable),
       libelle_rubrique_comptable: cleanValue(r.libelle_rubrique_comptable),
       nature_depense_comptable: cleanValue(r.nature_depense_comptable),
@@ -84,17 +91,52 @@ export async function POST(req: NextRequest){
   console.log(`[SAVE-CORRECTED] Payload préparé avec ${payload.length} éléments`);
   console.log(`[SAVE-CORRECTED] Colonnes utilisées:`, Object.keys(payload[0]));
 
-  const { error } = await supabase.from('depenses_completes').insert(payload);
+  // Mapper vers registre_flux (table principale)
+  const registrePayload = payload.map(r => ({
+    code_entite: r.code_entite,
+    libelle_entite: r.libelle_entite,
+    code_chantier: r.code_chantier,
+    libelle_chantier: r.libelle_chantier,
+    date_expedition: r.date_expedition,
+    quantite: r.quantite,
+    unite: r.unite || 'T',
+    libelle_ressource: r.libelle_ressource,
+    code_dechet: r.code_dechet,
+    exutoire: r.libelle_fournisseur || null,
+    code_fournisseur: r.code_fournisseur,
+    libelle_fournisseur: r.libelle_fournisseur,
+    origine: r.origine,
+    code_chapitre_comptable: r.code_chapitre_comptable,
+    libelle_chapitre_comptable: r.libelle_chapitre_comptable,
+    code_rubrique_comptable: r.code_rubrique_comptable,
+    libelle_rubrique_comptable: r.libelle_rubrique_comptable,
+    num_commande: r.num_commande,
+    num_reception: r.num_reception,
+    code_facture: r.code_facture,
+    pu: r.pu,
+    montant: r.montant,
+    source_name: 'export-corrected',
+    created_by: 'système'
+  }));
+
+  const { data, error } = await supabase
+    .from('registre_flux')
+    .insert(registrePayload)
+    .select();
   
   if (error) {
     console.error(`[SAVE-CORRECTED] Erreur Supabase:`, error);
     return NextResponse.json({ 
       error: error.message, 
       code: error.code,
-      details: error.details 
+      details: error.details,
+      hint: error.hint
     }, { status: 500 });
   }
 
-  console.log(`[SAVE-CORRECTED] Succès: ${payload.length} lignes insérées`);
-  return NextResponse.json({ ok: true, inserted: payload.length });
+  console.log(`[SAVE-CORRECTED] Succès: ${data?.length || registrePayload.length} lignes insérées`);
+  return NextResponse.json({ 
+    ok: true, 
+    inserted: data?.length || registrePayload.length 
+  });
 }

@@ -14,10 +14,10 @@ export async function GET(request: Request) {
   const codeChantier = searchParams.get('chantier');
 
   try {
-    // Essayer d'abord avec la vue unifiée, sinon fallback sur registre_flux
+    // Utiliser directement registre_flux (table principale)
     let query = supabase
-      .from('v_depenses_filtrees_unifie')
-      .select('libelle_fournisseur, exutoire, code_chantier, date_expedition, created_at')
+      .from('registre_flux')
+      .select('libelle_fournisseur, exutoire, code_chantier, libelle_chantier, date_expedition, created_at, code_entite')
       .order('created_at', { ascending: false })
       .limit(100);
 
@@ -28,28 +28,7 @@ export async function GET(request: Request) {
       query = query.ilike('code_chantier', `%${codeChantier}%`);
     }
 
-    let { data, error } = await query;
-
-    // Si la vue n'existe pas, fallback sur registre_flux
-    if (error && (error.code === '42P01' || error.message?.includes('does not exist') || error.message?.includes('relation'))) {
-      console.log('[DASHBOARD/RECENT-IMPORTS] Vue v_depenses_filtrees_unifie non trouvée, utilisation de registre_flux');
-      query = supabase
-        .from('registre_flux')
-        .select('libelle_fournisseur, exutoire, code_chantier, date_expedition, created_at')
-        .order('created_at', { ascending: false })
-        .limit(100);
-      
-      if (codeEntite) {
-        query = query.eq('code_entite', codeEntite);
-      }
-      if (codeChantier) {
-        query = query.ilike('code_chantier', `%${codeChantier}%`);
-      }
-      
-      const fallbackResult = await query;
-      data = fallbackResult.data;
-      error = fallbackResult.error;
-    }
+    const { data, error } = await query;
 
     if (error) {
       console.error('[DASHBOARD/RECENT-IMPORTS] Erreur:', error);

@@ -4,8 +4,14 @@ import { getSupabaseServer } from '../../../../lib/supabaseServer';
 export const runtime = "nodejs";
 
 export async function POST(req: NextRequest){
-  const supabase = getSupabaseServer();
-  if (!supabase) return NextResponse.json({ error: "Supabase non configuré" }, { status: 200 });
+  try {
+    const supabase = getSupabaseServer();
+    if (!supabase) {
+      return NextResponse.json({ 
+        error: "Supabase non configuré. Veuillez configurer NEXT_PUBLIC_SUPABASE_URL et SUPABASE_SERVICE_ROLE_KEY dans votre fichier .env.local",
+        type: 'missing_env_vars'
+      }, { status: 500 });
+    }
 
   const body = await req.json().catch(()=> ({}));
   const rows = body?.rows as any[] || [];
@@ -93,8 +99,60 @@ export async function POST(req: NextRequest){
     is_exutoire_valide: r.is_exutoire_valide || false
   }));
 
-  const { error } = await supabase.from('depenses_completes').insert(payload);
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  // Utiliser la table registre_flux (table principale pour les exports)
+  // Note: Certaines colonnes du payload peuvent ne pas exister dans registre_flux
+  // On mappe uniquement les colonnes qui existent
+  const registrePayload = payload.map(r => ({
+    code_entite: r.code_entite || null,
+    libelle_entite: r.libelle_entite || null,
+    code_chantier: r.code_chantier || null,
+    libelle_chantier: r.libelle_chantier || null,
+    date_expedition: r.date_expedition || null,
+    quantite: r.quantite || 0,
+    unite: r.unite || 'T',
+    libelle_ressource: r.libelle_ressource || null,
+    code_dechet: r.code_dechet || null,
+    exutoire: r.libelle_fournisseur || null,
+    code_fournisseur: r.code_fournisseur || null,
+    libelle_fournisseur: r.libelle_fournisseur || null,
+    origine: r.origine || null,
+    code_chapitre_comptable: r.code_chapitre_comptable || null,
+    libelle_chapitre_comptable: r.libelle_chapitre_comptable || null,
+    code_rubrique_comptable: r.code_rubrique_comptable || null,
+    libelle_rubrique_comptable: r.libelle_rubrique_comptable || null,
+    num_commande: r.num_commande || null,
+    num_reception: r.num_reception || null,
+    code_facture: r.code_facture || null,
+    pu: r.pu || 0,
+    montant: r.montant || 0,
+    source_name: 'export-complete',
+    created_by: 'système'
+  }));
 
-  return NextResponse.json({ ok: true, inserted: payload.length });
+  const { data, error } = await supabase
+    .from('registre_flux')
+    .insert(registrePayload)
+    .select();
+
+  if (error) {
+    console.error('[SAVE-COMPLETE] Erreur Supabase:', error);
+    return NextResponse.json({ 
+      error: error.message,
+      code: error.code,
+      details: error.details,
+      hint: error.hint
+    }, { status: 500 });
+  }
+
+    return NextResponse.json({ 
+      ok: true, 
+      inserted: data?.length || registrePayload.length 
+    });
+  } catch (error: any) {
+    console.error('[SAVE-COMPLETE] Erreur générale:', error);
+    return NextResponse.json({ 
+      error: error.message || 'Erreur serveur',
+      type: 'general_error'
+    }, { status: 500 });
+  }
 }

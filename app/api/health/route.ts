@@ -32,24 +32,39 @@ export async function GET() {
       });
     }
 
-    // Test simple de connexion
-    const { error } = await supabase
-      .from('depenses_brutes')
-      .select('id')
-      .limit(1);
+    // Test de connexion en vérifiant les tables principales
+    const tablesToCheck = ['registre_flux', 'pending_imports', 'imports_raw'];
+    const tableStatus: Record<string, boolean> = {};
+    let allTablesOk = true;
 
-    if (error) {
+    for (const table of tablesToCheck) {
+      const { error } = await supabase
+        .from(table)
+        .select('id')
+        .limit(1);
+      
+      tableStatus[table] = !error;
+      if (error) {
+        allTablesOk = false;
+        console.error(`[HEALTH] Erreur table ${table}:`, error.message);
+      }
+    }
+
+    if (!allTablesOk) {
       return NextResponse.json({ 
-        status: 'error',
-        connected: false,
-        message: error.message
+        status: 'warning',
+        connected: true,
+        message: 'Connexion OK mais certaines tables manquent ou sont inaccessibles',
+        tables: tableStatus,
+        note: 'Exécutez migrations/00_setup_complete.sql dans Supabase pour créer les tables'
       });
     }
 
     return NextResponse.json({ 
       status: 'ok',
       connected: true,
-      message: 'Base de données connectée'
+      message: 'Base de données connectée',
+      tables: tableStatus
     });
   } catch (error: any) {
     return NextResponse.json({ 
