@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import SortableHeader, { SortDirection } from './SortableHeader';
 import FilterableCodeDechetHeader, { CodeDechetFilter } from './FilterableCodeDechetHeader';
 import { isDangerousCode, parseCodeDechetWithDanger, isValidCodeDechet } from '@/lib/wasteUtils';
@@ -615,8 +615,8 @@ export default function HierarchicalTreeView({ data, allRows = [], onDataChange 
                     const hasValidCode = group.codeDechet && group.codeDechet !== 'Multiple' && isValidCodeDechet(group.codeDechet);
                     
                     return (
-                      <>
-                        <tr key={fullGroupKey} className={`hover:bg-gray-50 ${hasValidCode ? '' : 'bg-red-50'}`}>
+                      <React.Fragment key={fullGroupKey}>
+                        <tr className={`hover:bg-gray-50 ${hasValidCode ? '' : 'bg-red-50'}`}>
                           <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900 font-medium">
                             {isEditingSingle && editingRow ? (
                               <input
@@ -956,7 +956,7 @@ export default function HierarchicalTreeView({ data, allRows = [], onDataChange 
                             </tr>
                           );
                         })}
-                      </>
+                      </React.Fragment>
                     );
                   })}
                 </tbody>

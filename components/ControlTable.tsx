@@ -243,7 +243,7 @@ export default function ControlTable({ rows, onValidate }: { rows: any[]; onVali
               <thead className="bg-blue-50">
                 <tr className="border-b-2 border-blue-200">
                   <th className="px-3 py-2 text-left">Date</th>
-                  <th className="px-3 py-2 text-left max-w-[300px]">Dénomination</th>
+                  <th className="px-3 py-2 text-left">Dénomination</th>
                   <th className="px-3 py-2 text-left">Agence</th>
                   <th className="px-3 py-2 text-left">Chantier</th>
                   <th className="px-3 py-2 text-center">Quantité</th>
@@ -259,10 +259,10 @@ export default function ControlTable({ rows, onValidate }: { rows: any[]; onVali
                   const suggestion = getSuggestionForRow(r);
                   return (
                     <tr key={r.__id ?? `blue-${i}`} className="bg-white hover:bg-blue-50 transition">
-                      <td className="px-3 py-2">{formatDate(r.dateExpedition ?? r.Date ?? '')}</td>
-                      <td className="px-3 py-2 max-w-[300px] truncate">{r.denominationUsuelle ?? r['Libellé Ressource'] ?? ''}</td>
-                      <td className="px-3 py-2 truncate max-w-[150px]">{r['producteur.raisonSociale'] ?? r['Libellé Entité'] ?? ''}</td>
-                      <td className="px-3 py-2 truncate max-w-[150px]">{r['producteur.adresse.libelle'] ?? r['Libellé Chantier'] ?? ''}</td>
+                      <td className="px-3 py-2 whitespace-nowrap">{formatDate(r.dateExpedition ?? r.Date ?? '')}</td>
+                      <td className="px-3 py-2">{r.denominationUsuelle ?? r['Libellé Ressource'] ?? ''}</td>
+                      <td className="px-3 py-2">{r['producteur.raisonSociale'] ?? r['Libellé Entité'] ?? ''}</td>
+                      <td className="px-3 py-2">{r['producteur.adresse.libelle'] ?? r['Libellé Chantier'] ?? ''}</td>
                       <td className="px-3 py-2 text-center">{r.quantite ?? r.Quantité ?? ''}</td>
                       <td className="px-3 py-2 text-center">{r.codeUnite ?? r.Unité ?? ''}</td>
                       <td className="px-3 py-2">
@@ -355,7 +355,7 @@ export default function ControlTable({ rows, onValidate }: { rows: any[]; onVali
               <thead className="bg-gray-100">
                 <tr className="border-b-2 border-gray-300">
                   <th className="px-3 py-2 text-left">Date</th>
-                  <th className="px-3 py-2 text-left max-w-[300px]">Dénomination</th>
+                  <th className="px-3 py-2 text-left">Dénomination</th>
                   <th className="px-3 py-2 text-left">Agence</th>
                   <th className="px-3 py-2 text-left">Chantier</th>
                   <th className="px-3 py-2 text-center">Quantité</th>
@@ -369,10 +369,10 @@ export default function ControlTable({ rows, onValidate }: { rows: any[]; onVali
               <tbody className="divide-y divide-gray-200">
                 {rowsADefinir.map((r, i) => (
                   <tr key={r.__id ?? `gray-${i}`} className="bg-white hover:bg-gray-50 transition">
-                    <td className="px-3 py-2">{formatDate(r.dateExpedition ?? r.Date ?? '')}</td>
-                    <td className="px-3 py-2 max-w-[300px] truncate">{r.denominationUsuelle ?? r['Libellé Ressource'] ?? ''}</td>
-                    <td className="px-3 py-2 truncate max-w-[150px]">{r['producteur.raisonSociale'] ?? r['Libellé Entité'] ?? ''}</td>
-                    <td className="px-3 py-2 truncate max-w-[150px]">{r['producteur.adresse.libelle'] ?? r['Libellé Chantier'] ?? ''}</td>
+                    <td className="px-3 py-2 whitespace-nowrap">{formatDate(r.dateExpedition ?? r.Date ?? '')}</td>
+                    <td className="px-3 py-2">{r.denominationUsuelle ?? r['Libellé Ressource'] ?? ''}</td>
+                    <td className="px-3 py-2">{r['producteur.raisonSociale'] ?? r['Libellé Entité'] ?? ''}</td>
+                    <td className="px-3 py-2">{r['producteur.adresse.libelle'] ?? r['Libellé Chantier'] ?? ''}</td>
                     <td className="px-3 py-2 text-center">{r.quantite ?? r.Quantité ?? ''}</td>
                     <td className="px-3 py-2 text-center">{r.codeUnite ?? r.Unité ?? ''}</td>
                     <td className="px-3 py-2">
@@ -465,7 +465,7 @@ export default function ControlTable({ rows, onValidate }: { rows: any[]; onVali
               <thead className="bg-green-50">
                 <tr className="border-b-2 border-green-200">
                   <th className="px-3 py-2 text-left">Date</th>
-                  <th className="px-3 py-2 text-left max-w-[300px]">Dénomination</th>
+                  <th className="px-3 py-2 text-left">Dénomination</th>
                   <th className="px-3 py-2 text-left">Agence</th>
                   <th className="px-3 py-2 text-left">Chantier</th>
                   <th className="px-3 py-2 text-center">Quantité</th>
@@ -479,10 +479,10 @@ export default function ControlTable({ rows, onValidate }: { rows: any[]; onVali
               <tbody className="divide-y divide-green-200">
                 {rowsValidees.map((r, i) => (
                   <tr key={r.__id ?? `green-${i}`} className="bg-white hover:bg-green-50 transition">
-                    <td className="px-3 py-2">{formatDate(r.dateExpedition ?? r.Date ?? '')}</td>
-                    <td className="px-3 py-2 max-w-[300px] truncate">{r.denominationUsuelle ?? r['Libellé Ressource'] ?? ''}</td>
-                    <td className="px-3 py-2 truncate max-w-[150px]">{r['producteur.raisonSociale'] ?? r['Libellé Entité'] ?? ''}</td>
-                    <td className="px-3 py-2 truncate max-w-[150px]">{r['producteur.adresse.libelle'] ?? r['Libellé Chantier'] ?? ''}</td>
+                    <td className="px-3 py-2 whitespace-nowrap">{formatDate(r.dateExpedition ?? r.Date ?? '')}</td>
+                    <td className="px-3 py-2">{r.denominationUsuelle ?? r['Libellé Ressource'] ?? ''}</td>
+                    <td className="px-3 py-2">{r['producteur.raisonSociale'] ?? r['Libellé Entité'] ?? ''}</td>
+                    <td className="px-3 py-2">{r['producteur.adresse.libelle'] ?? r['Libellé Chantier'] ?? ''}</td>
                     <td className="px-3 py-2 text-center">{r.quantite ?? r.Quantité ?? ''}</td>
                     <td className="px-3 py-2 text-center">{r.codeUnite ?? r.Unité ?? ''}</td>
                     <td className="px-3 py-2">

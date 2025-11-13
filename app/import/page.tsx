@@ -8,6 +8,56 @@ import Footer from '../../components/Footer';
 import { isValidCodeDechet } from '@/lib/wasteUtils';
 import { useRouter } from 'next/navigation';
 
+// Fonction pour nettoyer les données avant stockage dans sessionStorage
+// Ne garde que les propriétés essentielles pour réduire la taille
+function cleanDataForStorage(rows: any[]): any[] {
+  return rows.map(row => {
+    const cleaned: any = {};
+    
+    // Propriétés essentielles à conserver
+    if (row.__id !== undefined) cleaned.__id = row.__id;
+    if (row.dateExpedition !== undefined) cleaned.dateExpedition = row.dateExpedition;
+    if (row.Date !== undefined) cleaned.Date = row.Date;
+    if (row.denominationUsuelle !== undefined) cleaned.denominationUsuelle = row.denominationUsuelle;
+    if (row['Libellé Ressource'] !== undefined) cleaned['Libellé Ressource'] = row['Libellé Ressource'];
+    if (row.quantite !== undefined) cleaned.quantite = row.quantite;
+    if (row.Quantité !== undefined) cleaned.Quantité = row.Quantité;
+    if (row.codeUnite !== undefined) cleaned.codeUnite = row.codeUnite;
+    if (row.Unité !== undefined) cleaned.Unité = row.Unité;
+    if (row.codeDechet !== undefined) cleaned.codeDechet = row.codeDechet;
+    if (row.danger !== undefined) cleaned.danger = row.danger;
+    if (row['producteur.raisonSociale'] !== undefined) cleaned['producteur.raisonSociale'] = row['producteur.raisonSociale'];
+    if (row['Libellé Entité'] !== undefined) cleaned['Libellé Entité'] = row['Libellé Entité'];
+    if (row['producteur.adresse.libelle'] !== undefined) cleaned['producteur.adresse.libelle'] = row['producteur.adresse.libelle'];
+    if (row['Libellé Chantier'] !== undefined) cleaned['Libellé Chantier'] = row['Libellé Chantier'];
+    if (row['destinataire.raisonSociale'] !== undefined) cleaned['destinataire.raisonSociale'] = row['destinataire.raisonSociale'];
+    
+    return cleaned;
+  });
+}
+
+// Fonction helper pour sauvegarder dans sessionStorage avec gestion d'erreur
+function saveToSessionStorage(key: string, data: any): boolean {
+  try {
+    const cleanedData = {
+      registre: data.registre ? cleanDataForStorage(data.registre) : [],
+      controle: data.controle ? cleanDataForStorage(data.controle) : [],
+      fileName: data.fileName
+    };
+    const jsonString = JSON.stringify(cleanedData);
+    sessionStorage.setItem(key, jsonString);
+    return true;
+  } catch (error: any) {
+    if (error.name === 'QuotaExceededError') {
+      console.error('Quota sessionStorage dépassé:', error);
+      alert('Les données sont trop volumineuses pour être stockées localement. Veuillez utiliser la fonctionnalité "Remplir plus tard" pour sauvegarder dans la base de données.');
+      return false;
+    }
+    console.error('Erreur lors de la sauvegarde dans sessionStorage:', error);
+    return false;
+  }
+}
+
 export default function ImportPage() {
   const router = useRouter();
   const [fileName, setFileName] = useState<string | undefined>();
@@ -41,23 +91,28 @@ export default function ImportPage() {
     setRegistre(newRegistre);
     setControle(newControle);
     setAllRows(newAllRows);
-    sessionStorage.setItem('fluxmat_data', JSON.stringify({
+    
+    // Sauvegarder dans sessionStorage avec gestion d'erreur
+    saveToSessionStorage('fluxmat_data', {
       registre: newRegistre,
       controle: newControle,
-      allRows: newAllRows,
       fileName: file.name
-    }));
+    });
+    
     setLoading(false);
   }
 
   function navigateToControle() {
-    sessionStorage.setItem('fluxmat_data', JSON.stringify({
+    // Ne pas stocker allRows car la page contrôle ne l'utilise pas
+    const success = saveToSessionStorage('fluxmat_data', {
       registre,
       controle,
-      allRows,
       fileName
-    }));
-    router.push('/controle');
+    });
+    
+    if (success) {
+      router.push('/controle');
+    }
   }
 
   // Toutes les lignes (pour les compteurs - toujours affichées sans filtres)
@@ -168,12 +223,12 @@ export default function ImportPage() {
               const newControle = updatedData.filter(r => !isValidCodeDechet(r.codeDechet));
               setRegistre(newRegistre);
               setControle(newControle);
-              // Mettre à jour sessionStorage
-              sessionStorage.setItem('fluxmat_data', JSON.stringify({
+              // Mettre à jour sessionStorage avec gestion d'erreur
+              saveToSessionStorage('fluxmat_data', {
                 registre: newRegistre,
                 controle: newControle,
                 fileName
-              }));
+              });
             }}
           />
         )}

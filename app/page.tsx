@@ -135,12 +135,60 @@ export default function Page() {
         const res = await fetch(`/api/pending-imports/load/${file.pending_id}`);
         const data = await res.json();
         if (data.ok) {
-          sessionStorage.setItem('fluxmat_data', JSON.stringify({
+          // Fonction pour nettoyer les données avant stockage
+          function cleanDataForStorage(rows: any[]): any[] {
+            return rows.map(row => {
+              const cleaned: any = {};
+              if (row.__id !== undefined) cleaned.__id = row.__id;
+              if (row.dateExpedition !== undefined) cleaned.dateExpedition = row.dateExpedition;
+              if (row.Date !== undefined) cleaned.Date = row.Date;
+              if (row.denominationUsuelle !== undefined) cleaned.denominationUsuelle = row.denominationUsuelle;
+              if (row['Libellé Ressource'] !== undefined) cleaned['Libellé Ressource'] = row['Libellé Ressource'];
+              if (row.quantite !== undefined) cleaned.quantite = row.quantite;
+              if (row.Quantité !== undefined) cleaned.Quantité = row.Quantité;
+              if (row.codeUnite !== undefined) cleaned.codeUnite = row.codeUnite;
+              if (row.Unité !== undefined) cleaned.Unité = row.Unité;
+              if (row.codeDechet !== undefined) cleaned.codeDechet = row.codeDechet;
+              if (row.danger !== undefined) cleaned.danger = row.danger;
+              if (row['producteur.raisonSociale'] !== undefined) cleaned['producteur.raisonSociale'] = row['producteur.raisonSociale'];
+              if (row['Libellé Entité'] !== undefined) cleaned['Libellé Entité'] = row['Libellé Entité'];
+              if (row['producteur.adresse.libelle'] !== undefined) cleaned['producteur.adresse.libelle'] = row['producteur.adresse.libelle'];
+              if (row['Libellé Chantier'] !== undefined) cleaned['Libellé Chantier'] = row['Libellé Chantier'];
+              if (row['destinataire.raisonSociale'] !== undefined) cleaned['destinataire.raisonSociale'] = row['destinataire.raisonSociale'];
+              return cleaned;
+            });
+          }
+          
+          function saveToSessionStorage(key: string, data: any): boolean {
+            try {
+              const cleanedData = {
+                registre: data.registre ? cleanDataForStorage(data.registre) : [],
+                controle: data.controle ? cleanDataForStorage(data.controle) : [],
+                fileName: data.fileName
+              };
+              const jsonString = JSON.stringify(cleanedData);
+              sessionStorage.setItem(key, jsonString);
+              return true;
+            } catch (error: any) {
+              if (error.name === 'QuotaExceededError') {
+                console.error('Quota sessionStorage dépassé:', error);
+                alert('Les données sont trop volumineuses pour être stockées localement. Veuillez utiliser la fonctionnalité "Remplir plus tard" pour sauvegarder dans la base de données.');
+                return false;
+              }
+              console.error('Erreur lors de la sauvegarde dans sessionStorage:', error);
+              return false;
+            }
+          }
+          
+          const success = saveToSessionStorage('fluxmat_data', {
             registre: data.registre || [],
             controle: data.controle || [],
             fileName: data.file_name
-          }));
-          router.push('/controle');
+          });
+          
+          if (success) {
+            router.push('/controle');
+          }
         } else {
           alert('Erreur lors du chargement du fichier');
         }
