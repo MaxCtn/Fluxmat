@@ -5,6 +5,7 @@ import FileDrop from '../../components/FileDrop';
 import HierarchicalTreeView from '../../components/HierarchicalTreeView';
 import Header from '../../components/Header';
 import Footer from '../../components/Footer';
+import { isValidCodeDechet } from '@/lib/wasteUtils';
 import { useRouter } from 'next/navigation';
 
 export default function ImportPage() {
@@ -66,8 +67,8 @@ export default function ImportPage() {
 
   // Compteurs calculés à partir de toutes les lignes (non filtrées)
   const totalLignes = toutesLesLignes.length;
-  const lignesValidees = toutesLesLignes.filter(r => r.codeDechet && r.codeDechet.trim().length === 6).length;
-  const lignesATraiter = toutesLesLignes.filter(r => !r.codeDechet || r.codeDechet.trim() === '' || r.codeDechet.length !== 6).length;
+  const lignesValidees = toutesLesLignes.filter(r => isValidCodeDechet(r.codeDechet)).length;
+  const lignesATraiter = toutesLesLignes.filter(r => !isValidCodeDechet(r.codeDechet)).length;
 
   return (
     <main className="min-h-dvh bg-gray-50">
@@ -163,8 +164,8 @@ export default function ImportPage() {
             allRows={allRows}
             onDataChange={(updatedData) => {
               // Séparer les données mises à jour en registre et controle
-              const newRegistre = updatedData.filter(r => r.codeDechet && r.codeDechet.trim().length === 6);
-              const newControle = updatedData.filter(r => !r.codeDechet || r.codeDechet.trim().length !== 6);
+              const newRegistre = updatedData.filter(r => isValidCodeDechet(r.codeDechet));
+              const newControle = updatedData.filter(r => !isValidCodeDechet(r.codeDechet));
               setRegistre(newRegistre);
               setControle(newControle);
               // Mettre à jour sessionStorage

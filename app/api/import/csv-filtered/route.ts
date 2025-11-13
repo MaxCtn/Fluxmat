@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseServer } from '@/lib/supabaseServer';
 import { parseCsv, getValue, normalizeKey } from '@/lib/csvParser';
 import { passesFilter } from '@/lib/filters';
-import { isWaste, extractCedCode, suggestCodeDechet } from '@/lib/wasteUtils';
+import { isWaste, extractCedCode, suggestCodeDechet, parseCodeDechetWithDanger, isDangerousCode } from '@/lib/wasteUtils';
 
 export const runtime = 'nodejs';
 
@@ -255,14 +255,36 @@ export async function POST(req: NextRequest) {
         filteredCount++;
         
         // Extraire le code CED explicite depuis libelle_ressource
-        const { codeCED: codeDechet } = extractCedCode(libelleRessource);
+        const { codeCED: codeDechetRaw } = extractCedCode(libelleRessource);
+        
+        // Détecter si le code extrait contient un astérisque
+        let codeDechet: string | null = null;
+        let dangerFromCode: boolean = false;
+        if (codeDechetRaw) {
+          // Vérifier si le libellé original contient un astérisque dans le code
+          const { code, danger } = parseCodeDechetWithDanger(libelleRessource);
+          codeDechet = code;
+          dangerFromCode = danger;
+        }
         
         // Suggérer un code déchet si pas de code explicite
         let suggestionCodeDechet: string | undefined;
+        let dangerFromSuggestion: boolean | undefined = undefined;
         if (!codeDechet) {
           const suggestion = suggestCodeDechet(libelleRessource);
           suggestionCodeDechet = suggestion?.codeCED || undefined;
+          dangerFromSuggestion = suggestion?.danger;
+        } else {
+          // Même si on a un code explicite, vérifier aussi la suggestion pour le danger
+          const suggestion = suggestCodeDechet(libelleRessource);
+          dangerFromSuggestion = suggestion?.danger;
         }
+        
+        // Vérifier aussi si le libellé original contient un astérisque
+        const dangerFromLabel = isDangerousCode(libelleRessource);
+        
+        // Priorité : astérisque dans le label > astérisque dans le code extrait > suggestion
+        const finalDanger = dangerFromLabel || dangerFromCode || dangerFromSuggestion === true;
         
         const exutoire = extractExutoire(libelleFournisseur, libelleChantier);
         
@@ -309,7 +331,9 @@ export async function POST(req: NextRequest) {
           fichier_source: file.name,
           created_by: 'système',
           // Stocker la suggestion pour le frontend
-          suggestionCodeDechet: suggestionCodeDechet || null
+          suggestionCodeDechet: suggestionCodeDechet || null,
+          // Stocker le danger pour le frontend
+          danger: finalDanger
         };
 
         registreInserts.push(registreInsert);
@@ -356,13 +380,15 @@ export async function POST(req: NextRequest) {
         // Déchet avec code CED explicite → va dans registre
         registreData.push({
           ...baseData,
-          codeDechet: insert.code_dechet
+          codeDechet: insert.code_dechet,
+          danger: insert.danger || false // Inclure le champ danger
         });
       } else {
         // Déchet sans code CED explicite → va dans contrôle avec suggestion
         controleData.push({
           ...baseData,
           codeDechet: '',
+          danger: insert.danger || false, // Inclure le champ danger
           suggestionCodeDechet: insert.suggestionCodeDechet || undefined,
           'producteur.raisonSociale': insert.libelle_entite,
           'producteur.adresse.libelle': insert.libelle_chantier,

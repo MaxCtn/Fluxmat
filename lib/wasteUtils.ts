@@ -53,6 +53,19 @@ export function parseCodeDechetWithDanger(codeDechet: string): { code: string; d
 }
 
 /**
+ * Valide si un code déchet est valide (6 chiffres)
+ * Accepte les codes avec ou sans astérisque, avec ou sans espaces
+ * Exemples valides : "130508", "130508*", "13 05 08", "13 05 08*"
+ */
+export function isValidCodeDechet(codeDechet: string | undefined | null): boolean {
+  if (!codeDechet) return false;
+  // Normaliser le code (enlever astérisque, espaces, tirets) et garder uniquement les chiffres
+  const normalized = codeDechet.replace(/\*/g, '').replace(/[\s\-]/g, '').replace(/\D/g, '');
+  // Un code déchet valide doit avoir exactement 6 chiffres
+  return normalized.length === 6;
+}
+
+/**
  * Liste de mots-clés permissifs pour la détection de déchets
  * Fusion des mots-clés de l'ancien système et de ceux extraits de WASTE_MAP
  */
@@ -174,27 +187,35 @@ export function matchWasteKeywords(normalizedText: string, wasteMap: WasteMapIte
       
       if (patternWords.length === 0) continue;
       
-      // Vérifier si tous les mots du pattern sont présents dans le texte
+      // Vérifier si tous les mots significatifs du pattern sont présents dans le texte
+      // Filtrer d'abord les mots significatifs (longueur >= 3)
+      const significantWords = patternWords.filter(w => w.length >= 3);
+      
+      // Si aucun mot significatif, ignorer ce pattern
+      if (significantWords.length === 0) continue;
+      
       let allWordsMatch = true;
       let totalMatches = 0;
       
-      for (const word of patternWords) {
-        // Éviter les mots trop courts qui créent des faux positifs
-        if (word.length < 3) continue;
-        
+      for (const word of significantWords) {
         // Utiliser word boundary pour éviter les sous-chaînes
-        const wordRegex = new RegExp(`\\b${word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
+        // Échapper les caractères spéciaux regex
+        const escapedWord = word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const wordRegex = new RegExp(`\\b${escapedWord}\\b`, 'i');
+        
         if (wordRegex.test(normalizedText)) {
           totalMatches++;
         } else {
-          // Si un mot du pattern n'est pas trouvé, ce n'est pas un match complet
+          // Si un mot significatif du pattern n'est pas trouvé, ce n'est pas un match complet
           allWordsMatch = false;
+          break; // Sortir dès qu'un mot ne matche pas
         }
       }
       
-      if (allWordsMatch && totalMatches > 0) {
-        // Score de spécificité : plus il y a de mots, plus c'est spécifique
-        const specificity = patternWords.length;
+      // Un match est valide si tous les mots significatifs sont présents
+      if (allWordsMatch && totalMatches > 0 && totalMatches === significantWords.length) {
+        // Score de spécificité : plus il y a de mots significatifs, plus c'est spécifique
+        const specificity = significantWords.length;
         matches.push({ item, pattern: normalizedPattern, specificity });
       }
     }
@@ -205,8 +226,11 @@ export function matchWasteKeywords(normalizedText: string, wasteMap: WasteMapIte
   // Trier par spécificité décroissante (le plus spécifique en premier)
   matches.sort((a, b) => b.specificity - a.specificity);
   
-  // Cas spécial : si le texte contient "polluée" ou "souillée", ne pas retourner "terre non polluée"
-  const hasPollution = /(pollue|souill|contamin)/i.test(normalizedText);
+  // Détection renforcée de pollution : mots-clés à exclure pour terre non polluée
+  const pollutionKeywords = /(pollue|souill|contamin|hap|goudron|hydrocarb)/i;
+  const hasPollution = pollutionKeywords.test(normalizedText);
+  
+  // Cas spécial 1 : si le texte contient des indicateurs de pollution, ne pas retourner "terre non polluée"
   const terreNonPolluee = matches.find(m => m.item.codeCED.replace(/\s/g, '') === '170504');
   
   if (hasPollution && terreNonPolluee && matches.length > 1) {
@@ -215,21 +239,51 @@ export function matchWasteKeywords(normalizedText: string, wasteMap: WasteMapIte
     if (filtered.length > 0) {
       const bestMatch = filtered[0];
       const codeCED = bestMatch.item.codeCED.replace(/\s/g, '');
+      const isDangerous = bestMatch.item.categorie === "Déchet dangereux" || bestMatch.item.codeCED.includes('*');
       return {
         codeCED,
         label: bestMatch.item.label,
-        categorie: bestMatch.item.categorie
+        categorie: bestMatch.item.categorie,
+        danger: isDangerous
       };
+    }
+  }
+  
+  // Cas spécial 2 : pour les enrobés, vérifier si le texte contient des indicateurs de goudron
+  // même si le pattern générique "enrobe" a matché (code 17 03 02)
+  const enrobeNonDangereux = matches.find(m => m.item.codeCED.replace(/\s/g, '') === '170302');
+  const enrobeDangereux = matches.find(m => m.item.codeCED.replace(/\s/g, '') === '170301');
+  
+  // Si on a matché un enrobé non dangereux mais qu'il y a des indicateurs de goudron dans le texte
+  // et qu'aucun pattern dangereux n'a matché, surclasser vers dangereux
+  if (enrobeNonDangereux && !enrobeDangereux) {
+    const hasGoudronIndicators = /(goudron|hap|pollue|ancien)/i.test(normalizedText);
+    if (hasGoudronIndicators) {
+      // Chercher l'item dangereux dans WASTE_MAP pour retourner le bon label
+      const dangerousEnrobeItem = sortedMap.find(item => item.codeCED.replace(/\s/g, '') === '170301');
+      if (dangerousEnrobeItem) {
+        // Retourner l'enrobé dangereux au lieu du non dangereux
+        const isDangerous = dangerousEnrobeItem.categorie === "Déchet dangereux" || dangerousEnrobeItem.codeCED.includes('*');
+        return {
+          codeCED: '170301',
+          label: dangerousEnrobeItem.label,
+          categorie: dangerousEnrobeItem.categorie,
+          danger: isDangerous
+        };
+      }
     }
   }
   
   // Retourner le match le plus spécifique
   const bestMatch = matches[0];
   const codeCED = bestMatch.item.codeCED.replace(/\s/g, '');
+  // Déterminer si c'est un déchet dangereux (catégorie "Déchet dangereux" ou code avec astérisque)
+  const isDangerous = bestMatch.item.categorie === "Déchet dangereux" || bestMatch.item.codeCED.includes('*');
   return {
     codeCED,
     label: bestMatch.item.label,
-    categorie: bestMatch.item.categorie
+    categorie: bestMatch.item.categorie,
+    danger: isDangerous
   };
 }
 
@@ -281,19 +335,23 @@ export function suggestCodeDechet(
     for (const item of WASTE_MAP) {
       const itemCode = item.codeCED.replace(/\s/g, '');
       if (itemCode === codeWithoutSpaces) {
+        const isDangerous = item.categorie === "Déchet dangereux" || item.codeCED.includes('*');
         return {
           codeCED: codeWithoutSpaces,
           label: item.label,
-          categorie: item.categorie
+          categorie: item.categorie,
+          danger: isDangerous
         };
       }
     }
     
-    // Si code trouvé mais pas dans WASTE_MAP, retourner juste le code
+    // Si code trouvé mais pas dans WASTE_MAP, vérifier si le label original contient un astérisque
+    const hasAsteriskInLabel = isDangerousCode(label);
     return {
       codeCED: codeWithoutSpaces,
       label: `Code CED ${codeWithSpaces}`,
-      categorie: "Non défini"
+      categorie: "Non défini",
+      danger: hasAsteriskInLabel
     };
   }
   
@@ -332,27 +390,74 @@ function hasPermissiveWasteKeywords(normalizedText: string): boolean {
 
 /**
  * Vérifie si un libellé correspond à un déchet (utilisé pour filtrer l'import)
+ * Mode STRICT : ne garde que les vrais déchets
  * Ordre de vérification :
- * 1. Code CED explicite (le plus fiable)
- * 2. Match strict avec WASTE_MAP (précis mais peut être trop strict)
- * 3. Mode permissif avec mots-clés simples (fallback pour ne rien rater)
+ * 1. Exclusions explicites (camions, locations, négoce carrière)
+ * 2. Code CED explicite (le plus fiable)
+ * 3. Match strict avec WASTE_MAP uniquement
+ * 
+ * Le mode permissif a été supprimé pour éviter les faux positifs (ex: "D16 BI BENNE 16T")
  */
 export function isWaste(label: string | undefined): boolean {
   if (!label) return false;
   
-  // 1. Vérifier si on peut extraire un code CED (le plus fiable)
+  const normalized = normalizeText(label);
+  
+  // EXCLUSIONS EXPLICITES : ne pas considérer comme déchets
+  
+  // 1. Exclusion : "MATERIAUX POUR NEGOCE CARRIERE" n'est pas un déchet
+  // C'est plutôt un flux matière (achat/revente) qu'un déchet à éliminer
+  if (normalized.includes('negoce carriere') || normalized.includes('négoce carrière') || 
+      normalized.includes('materiaux pour negoce') || normalized.includes('matériaux pour négoce')) {
+    return false;
+  }
+  
+  // 2. Exclusion : Locations de matériel (ex: "LOC SCIE A SOL")
+  if (normalized.trim().startsWith('loc ')) {
+    return false;
+  }
+  
+  // 3. Exclusion : Camions/véhicules (ex: "D16 BI BENNE 16T")
+  // Patterns de véhicules : codes de camions (D16, D20, etc.), "BI BENNE" (benne de camion)
+  // "benne" seul sans contexte déchet = probablement un véhicule
+  const vehiclePatterns = [
+    /^d\d+\s/, // D16, D20, etc. en début de ligne
+    /\bd\d+\s+bi\s+benne/i, // D16 BI BENNE
+    /\b(camion|vehicule)\b/i, // camion, véhicule
+    /\bbenne\s+\d+t\b/i, // BENNE 16T, BENNE 20T (sans contexte déchet)
+    /\bbenne\s+\d+m3\b/i, // BENNE 16M3, etc.
+  ];
+  
+  // Si le texte contient "benne" mais pas de contexte déchet clair, c'est probablement un véhicule
+  if (normalized.includes('benne')) {
+    // Vérifier si c'est un contexte de déchet (ex: "benne enrobe", "benne dechet")
+    const wasteContext = /(benne\s+(enrobe|dechet|beton|terre|gravat|inert|ferraill|bois|dib|carton|papier|verre|vert|municipal|menager|huile|filtre|solvant|emballage|absorbant|epi|amiante|piles|batterie|deee|aerosol))/i;
+    if (!wasteContext.test(normalized)) {
+      // Pas de contexte déchet clair, probablement un véhicule
+      return false;
+    }
+  }
+  
+  // Vérifier les autres patterns de véhicules
+  for (const pattern of vehiclePatterns) {
+    if (pattern.test(normalized)) {
+      return false;
+    }
+  }
+  
+  // VÉRIFICATIONS POSITIVES : est-ce un déchet ?
+  
+  // 1. Vérifier si on peut extraire un code CED explicite (le plus fiable)
   // Passer le texte original pour préserver les underscores et caractères spéciaux
   const { codeCED } = extractCedCode(label);
   if (codeCED) return true;
   
-  // Normaliser le texte pour les recherches par mots-clés
-  const normalized = normalizeText(label);
-  
-  // 2. Vérifier si on peut matcher avec WASTE_MAP (mode strict)
+  // 2. Vérifier si on peut matcher avec WASTE_MAP (mode strict uniquement)
+  // Plus de mode permissif pour éviter les faux positifs
   const match = matchWasteKeywords(normalized);
   if (match !== null) return true;
   
-  // 3. Fallback permissif : chercher la présence d'un seul mot-clé (mode souple)
-  return hasPermissiveWasteKeywords(normalized);
+  // Si aucune condition n'est remplie, ce n'est pas un déchet
+  return false;
 }
 

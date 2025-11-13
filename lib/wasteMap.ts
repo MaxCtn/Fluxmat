@@ -14,7 +14,17 @@ export const WASTE_MAP: WasteMapItem[] = [
     patterns: [
       "terre et cailloux non pollu", // terre / cailloux propres
       "terre non pollu",
-      "cailloux non pollu"
+      "cailloux non pollu",
+      "dechet terre et cailloux non valorisable", // même si "non valorisable", tant qu'il n'y a pas pollution
+      "dechet terre cailloux non valorisable",
+      "terre cailloux non valorisable",
+      "grave concass", // grave concassée (toutes granulométries)
+      "grave concassee",
+      "grave concassee 0/20", // GRAVE CONCASSEE 0/20
+      "ecart grave concass",
+      "ecart grave", // pour matcher "ecart grave + tgap" (sans "concass")
+      "grave 0/20",
+      "grave 0/16"
     ],
     label: "Terre et cailloux non pollués",
     codeCED: "17 05 04",
@@ -25,7 +35,15 @@ export const WASTE_MAP: WasteMapItem[] = [
       "melange bitumineux ne contenant pas de goudron",
       "mélanges bitumineux ne contenant pas de goudron",
       "enrobe a froid", // souvent utilisé pour l'enrobé propre
-      "enrobé à froid"
+      "enrobe a froid noir", // ENROBE A FROID NOIR 25KG
+      "enrobé à froid",
+      "enrobé à froid noir",
+      "enrobe noir", // pour matcher les enrobés noirs
+      "enrobé noir",
+      "benne enrobe", // enrobés par défaut (sans mention de goudron)
+      "32 benne enrobe",
+      "enrobe", // pattern générique pour enrobés (sera surclassé si goudron détecté)
+      "enrobé"
     ],
     label: "Mélanges bitumineux ne contenant pas de goudron",
     codeCED: "17 03 02",
@@ -232,7 +250,12 @@ export const WASTE_MAP: WasteMapItem[] = [
       "béton bitumineux contenant du goudron",
       "enrobé pollué",
       "enrobe pollue",
-      "enrobe hap"
+      "enrobe hap",
+      "enrobe goudron", // détection explicite de goudron
+      "enrobé goudron",
+      "enrobe ancien", // anciens enrobés souvent au goudron
+      "ancien enrobe",
+      "ancien enrobé"
     ],
     label: "Mélanges bitumineux contenant du goudron",
     codeCED: "17 03 01*",

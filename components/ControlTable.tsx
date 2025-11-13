@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import Toast from './Toast';
-import { suggestCodeDechet, isDangerousCode, parseCodeDechetWithDanger } from '@/lib/wasteUtils';
+import { suggestCodeDechet, isDangerousCode, parseCodeDechetWithDanger, isValidCodeDechet } from '@/lib/wasteUtils';
 
 /**
  * Icône stylo pour modifier
@@ -26,6 +26,29 @@ function TrashIcon({ className }: { className?: string }) {
 }
 
 function normalizeCode(v: string) { return (v || '').replace(/\D/g, '').slice(0, 6); }
+
+/**
+ * Formate le code déchet pour l'affichage avec/sans astérisque selon l'état danger
+ */
+function formatCodeDechet(code: string | undefined, danger: boolean | undefined): string {
+  if (!code) return '';
+  const cleanCode = code.replace(/\*/g, '').replace(/[\s\-]/g, '');
+  if (danger === true) {
+    return cleanCode + '*';
+  }
+  return cleanCode;
+}
+
+/**
+ * Extrait le code déchet propre (sans astérisque) et détecte le danger
+ */
+function parseCodeInput(value: string): { code: string; danger: boolean } {
+  if (!value) return { code: '', danger: false };
+  const trimmed = value.trim();
+  const hasAsterisk = trimmed.endsWith('*') || trimmed.includes('*');
+  const code = trimmed.replace(/\*/g, '').replace(/[\s\-]/g, '').slice(0, 6);
+  return { code, danger: hasAsterisk };
+}
 
 function formatDate(dateValue: any): string {
   if (!dateValue) return '';
@@ -56,15 +79,15 @@ export default function ControlTable({ rows, onValidate }: { rows: any[]; onVali
   }, [rows]);
 
   // Catégoriser les lignes
-  const rowsValidees = allRows.filter(r => r.codeDechet && r.codeDechet.length === 6);
+  const rowsValidees = allRows.filter(r => isValidCodeDechet(r.codeDechet));
   const rowsAvecSuggestion = allRows.filter(r => {
-    if (r.codeDechet && r.codeDechet.length === 6) return false; // Déjà validée
+    if (isValidCodeDechet(r.codeDechet)) return false; // Déjà validée
     const label = r.denominationUsuelle || r['Libellé Ressource'] || '';
     const match = suggestCodeDechet(label);
     return match !== null;
   });
   const rowsADefinir = allRows.filter(r => {
-    if (r.codeDechet && r.codeDechet.length === 6) return false; // Déjà validée
+    if (isValidCodeDechet(r.codeDechet)) return false; // Déjà validée
     const label = r.denominationUsuelle || r['Libellé Ressource'] || '';
     const match = suggestCodeDechet(label);
     return match === null;
@@ -88,16 +111,29 @@ export default function ControlTable({ rows, onValidate }: { rows: any[]; onVali
     let count = 0;
     const updated = allRows.map(row => {
       // Ignorer les lignes qui ont déjà un code déchet valide
-      if (row.codeDechet && row.codeDechet.length === 6) {
+      if (isValidCodeDechet(row.codeDechet)) {
         return row;
       }
       
       // Calculer la suggestion avec le nouveau système
       const suggestion = getSuggestionForRow(row);
+      const dangerFromSuggestion = getDangerForRow(row);
+      
+      // Vérifier aussi si le label original contient un astérisque
+      const label = row.denominationUsuelle || row['Libellé Ressource'] || '';
+      const dangerFromAsterisk = isDangerousCode(label);
+      
+      // Priorité : astérisque dans le label > suggestion de la table
+      // Si dangerFromSuggestion est true, alors finalDanger est true
+      const finalDanger = dangerFromAsterisk || dangerFromSuggestion === true;
       
       if (suggestion) {
         count++;
-        return { ...row, codeDechet: suggestion };
+        return { 
+          ...row, 
+          codeDechet: suggestion,
+          danger: finalDanger // Force danger à true si finalDanger est true, sinon false
+        };
       }
       
       // Si aucune suggestion, marquer comme "à définir"
@@ -118,13 +154,19 @@ export default function ControlTable({ rows, onValidate }: { rows: any[]; onVali
       const dangerFromAsterisk = isDangerousCode(label);
       
       // Priorité : astérisque dans le label > suggestion de la table
-      const finalDanger = dangerFromAsterisk || dangerFromSuggestion;
+      // Si l'un des deux est true, alors finalDanger est true
+      const finalDanger = dangerFromAsterisk || dangerFromSuggestion === true;
       
       const updated = allRows.map(r => 
-        r.__id === row.__id ? { ...r, codeDechet: suggestion, danger: finalDanger !== undefined ? finalDanger : r.danger } : r
+        r.__id === row.__id ? { 
+          ...r, 
+          codeDechet: suggestion, // Code propre sans astérisque
+          danger: finalDanger // Force danger à true si finalDanger est true, sinon false
+        } : r
       );
       setAllRows(updated);
-      setToastMessage(`Code déchet ${suggestion} appliqué !`);
+      const codeDisplay = formatCodeDechet(suggestion, finalDanger);
+      setToastMessage(`Code déchet ${codeDisplay} appliqué !`);
     } else {
       // Marquer comme "à définir"
       const updated = allRows.map(r => 
@@ -227,19 +269,17 @@ export default function ControlTable({ rows, onValidate }: { rows: any[]; onVali
                         <input
                           className="input w-24 text-center"
                           placeholder={suggestion || "170302"}
-                          value={r.codeDechet ?? ''}
+                          value={formatCodeDechet(r.codeDechet, r.danger)}
                           onChange={(e) => {
                             const idx = allRows.findIndex(row => row.__id === r.__id);
                             if (idx >= 0) {
                               const next = [...allRows];
                               const inputValue = e.target.value;
                               // Détecter si le code contient un astérisque
-                              const { code, danger } = parseCodeDechetWithDanger(inputValue);
-                              next[idx].codeDechet = normalizeCode(code);
+                              const { code, danger } = parseCodeInput(inputValue);
+                              next[idx].codeDechet = code;
                               // Si l'astérisque est présent, cocher automatiquement la case danger
-                              if (danger) {
-                                next[idx].danger = true;
-                              }
+                              next[idx].danger = danger;
                               setAllRows(next);
                             }
                           }}
@@ -253,7 +293,13 @@ export default function ControlTable({ rows, onValidate }: { rows: any[]; onVali
                             const idx = allRows.findIndex(row => row.__id === r.__id);
                             if (idx >= 0) {
                               const next = [...allRows];
-                              next[idx].danger = e.target.checked;
+                              const isChecked = e.target.checked;
+                              next[idx].danger = isChecked;
+                              // Synchroniser l'astérisque dans le code déchet
+                              if (next[idx].codeDechet) {
+                                // Le code déchet sera formaté automatiquement avec l'astérisque via formatCodeDechet
+                                // On garde juste le code propre dans codeDechet
+                              }
                               setAllRows(next);
                             }
                           }}
@@ -333,19 +379,17 @@ export default function ControlTable({ rows, onValidate }: { rows: any[]; onVali
                       <input
                         className="input w-24 text-center"
                         placeholder="Manuel"
-                        value={r.codeDechet ?? ''}
+                        value={formatCodeDechet(r.codeDechet, r.danger)}
                         onChange={(e) => {
                           const idx = allRows.findIndex(row => row.__id === r.__id);
                           if (idx >= 0) {
                             const next = [...allRows];
                             const inputValue = e.target.value;
                             // Détecter si le code contient un astérisque
-                            const { code, danger } = parseCodeDechetWithDanger(inputValue);
-                            next[idx].codeDechet = normalizeCode(code);
+                            const { code, danger } = parseCodeInput(inputValue);
+                            next[idx].codeDechet = code;
                             // Si l'astérisque est présent, cocher automatiquement la case danger
-                            if (danger) {
-                              next[idx].danger = true;
-                            }
+                            next[idx].danger = danger;
                             setAllRows(next);
                           }
                         }}
@@ -359,7 +403,13 @@ export default function ControlTable({ rows, onValidate }: { rows: any[]; onVali
                           const idx = allRows.findIndex(row => row.__id === r.__id);
                           if (idx >= 0) {
                             const next = [...allRows];
-                            next[idx].danger = e.target.checked;
+                            const isChecked = e.target.checked;
+                            next[idx].danger = isChecked;
+                            // Synchroniser l'astérisque dans le code déchet
+                            if (next[idx].codeDechet) {
+                              // Le code déchet sera formaté automatiquement avec l'astérisque via formatCodeDechet
+                              // On garde juste le code propre dans codeDechet
+                            }
                             setAllRows(next);
                           }
                         }}
@@ -438,19 +488,17 @@ export default function ControlTable({ rows, onValidate }: { rows: any[]; onVali
                     <td className="px-3 py-2">
                       <input
                         className="input w-24 bg-white text-center"
-                        value={r.codeDechet ?? ''}
+                        value={formatCodeDechet(r.codeDechet, r.danger)}
                         onChange={(e) => {
                           const idx = allRows.findIndex(row => row.__id === r.__id);
                           if (idx >= 0) {
                             const next = [...allRows];
                             const inputValue = e.target.value;
                             // Détecter si le code contient un astérisque
-                            const { code, danger } = parseCodeDechetWithDanger(inputValue);
-                            next[idx].codeDechet = normalizeCode(code);
+                            const { code, danger } = parseCodeInput(inputValue);
+                            next[idx].codeDechet = code;
                             // Si l'astérisque est présent, cocher automatiquement la case danger
-                            if (danger) {
-                              next[idx].danger = true;
-                            }
+                            next[idx].danger = danger;
                             setAllRows(next);
                           }
                         }}
@@ -464,7 +512,13 @@ export default function ControlTable({ rows, onValidate }: { rows: any[]; onVali
                           const idx = allRows.findIndex(row => row.__id === r.__id);
                           if (idx >= 0) {
                             const next = [...allRows];
-                            next[idx].danger = e.target.checked;
+                            const isChecked = e.target.checked;
+                            next[idx].danger = isChecked;
+                            // Synchroniser l'astérisque dans le code déchet
+                            if (next[idx].codeDechet) {
+                              // Le code déchet sera formaté automatiquement avec l'astérisque via formatCodeDechet
+                              // On garde juste le code propre dans codeDechet
+                            }
                             setAllRows(next);
                           }
                         }}
@@ -580,10 +634,27 @@ function EditModal({ row, onSave, onCancel }: { row: any; onSave: (row: any) => 
             <label className="block text-sm font-medium text-gray-300 mb-2">Code Déchet</label>
             <input
               type="text"
-              value={edited.codeDechet ?? ''}
-              onChange={(e) => setEdited({ ...edited, codeDechet: (e.target.value || '').replace(/\D/g, '').slice(0, 6) })}
+              value={formatCodeDechet(edited.codeDechet, edited.danger)}
+              onChange={(e) => {
+                const inputValue = e.target.value;
+                const { code, danger } = parseCodeInput(inputValue);
+                setEdited({ ...edited, codeDechet: code, danger });
+              }}
               className="w-full rounded-lg bg-white/5 border border-white/20 px-3 py-2 outline-none focus:ring-2 focus:ring-cyan-500 text-white"
             />
+          </div>
+          <div>
+            <label className="flex items-center gap-2 text-sm font-medium text-gray-300 mb-2">
+              <input
+                type="checkbox"
+                checked={edited.danger === true}
+                onChange={(e) => {
+                  setEdited({ ...edited, danger: e.target.checked });
+                }}
+                className="w-4 h-4 text-red-600 border-gray-300 rounded focus:ring-red-500"
+              />
+              Déchet dangereux
+            </label>
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-300 mb-2">Ressource</label>

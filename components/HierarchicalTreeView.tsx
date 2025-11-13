@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import SortableHeader, { SortDirection } from './SortableHeader';
 import FilterableCodeDechetHeader, { CodeDechetFilter } from './FilterableCodeDechetHeader';
-import { isDangerousCode, parseCodeDechetWithDanger } from '@/lib/wasteUtils';
+import { isDangerousCode, parseCodeDechetWithDanger, isValidCodeDechet } from '@/lib/wasteUtils';
 
 interface RowData {
   __id?: string;
@@ -57,6 +57,29 @@ function normalizeCode(v: string): string {
 }
 
 /**
+ * Formate le code déchet pour l'affichage (ajoute l'astérisque si danger)
+ */
+function formatCodeDechet(code: string | undefined | null, danger: boolean | undefined): string {
+  if (!code) return '';
+  const cleanCode = code.replace(/\*/g, '').replace(/[\s\-]/g, '');
+  if (danger === true) {
+    return cleanCode + '*';
+  }
+  return cleanCode;
+}
+
+/**
+ * Parse l'input utilisateur pour extraire le code et détecter le danger
+ */
+function parseCodeInput(value: string): { code: string; danger: boolean } {
+  if (!value) return { code: '', danger: false };
+  const trimmed = value.trim();
+  const hasAsterisk = trimmed.endsWith('*') || trimmed.includes('*');
+  const code = trimmed.replace(/\*/g, '').replace(/[\s\-]/g, '').slice(0, 6);
+  return { code, danger: hasAsterisk };
+}
+
+/**
  * Structure les données en lignes de tableau hiérarchique (Établissement > Agence > Chantier)
  */
 function buildTableRows(data: RowData[]): HierarchicalRow[] {
@@ -84,7 +107,7 @@ function buildTableRows(data: RowData[]): HierarchicalRow[] {
     }
 
     const rowData = rowsMap.get(key)!;
-    const hasCode = row.codeDechet && row.codeDechet.trim().length === 6;
+    const hasCode = isValidCodeDechet(row.codeDechet);
     
     if (hasCode) {
       rowData.withCode.push(row);
@@ -204,10 +227,11 @@ function groupByDateAndDenomination(items: RowData[]): GroupedRow[] {
     }
 
     // Vérifier si tous les codes déchets sont identiques
-    if (item.codeDechet && item.codeDechet.trim().length === 6) {
+    if (isValidCodeDechet(item.codeDechet)) {
+      const codeDechet = item.codeDechet || null;
       if (group.codeDechet === null) {
-        group.codeDechet = item.codeDechet;
-      } else if (group.codeDechet !== item.codeDechet) {
+        group.codeDechet = codeDechet;
+      } else if (group.codeDechet !== codeDechet) {
         group.codeDechet = 'Multiple';
       }
     }
@@ -511,9 +535,9 @@ export default function HierarchicalTreeView({ data, allRows = [], onDataChange 
         // Filtrer selon le filtre code déchet
         let filteredData = groupData;
         if (codeDechetFilter === 'with') {
-          filteredData = groupData.filter(r => r.codeDechet && r.codeDechet.trim().length === 6);
+          filteredData = groupData.filter(r => isValidCodeDechet(r.codeDechet));
         } else if (codeDechetFilter === 'without') {
-          filteredData = groupData.filter(r => !r.codeDechet || r.codeDechet.trim().length !== 6);
+          filteredData = groupData.filter(r => !isValidCodeDechet(r.codeDechet));
         }
         
         // Grouper et trier les lignes
@@ -521,8 +545,8 @@ export default function HierarchicalTreeView({ data, allRows = [], onDataChange 
         const grouped = sortGroupedRows(groupedRows, sortState?.key || null, sortState?.direction || null);
         
         // Séparer les groupes : d'abord ceux avec code déchet, puis ceux sans
-        const withCode = grouped.filter(g => g.codeDechet && g.codeDechet !== 'Multiple' && g.codeDechet.length === 6);
-        const withoutCode = grouped.filter(g => !g.codeDechet || g.codeDechet === 'Multiple' || g.codeDechet.length !== 6);
+        const withCode = grouped.filter(g => g.codeDechet && g.codeDechet !== 'Multiple' && isValidCodeDechet(g.codeDechet));
+        const withoutCode = grouped.filter(g => !g.codeDechet || g.codeDechet === 'Multiple' || !isValidCodeDechet(g.codeDechet));
         const sortedGrouped = [...withCode, ...withoutCode];
         
         if (totalLignes === 0) return null;
@@ -588,7 +612,7 @@ export default function HierarchicalTreeView({ data, allRows = [], onDataChange 
                     const isEditingSingle = singleItem && editingRow?.__id === singleItem.__id;
                     
                     // Déterminer si le groupe a un code déchet valide
-                    const hasValidCode = group.codeDechet && group.codeDechet !== 'Multiple' && group.codeDechet.length === 6;
+                    const hasValidCode = group.codeDechet && group.codeDechet !== 'Multiple' && isValidCodeDechet(group.codeDechet);
                     
                     return (
                       <>
@@ -652,16 +676,14 @@ export default function HierarchicalTreeView({ data, allRows = [], onDataChange 
                             {isEditingSingle && editingRow ? (
                               <input
                                 type="text"
-                                value={editingRow.codeDechet || ''}
+                                value={formatCodeDechet(editingRow.codeDechet, editingRow.danger)}
                                 onChange={(e) => {
                                   const inputValue = e.target.value;
-                                  // Détecter si le code contient un astérisque
-                                  const { code, danger } = parseCodeDechetWithDanger(inputValue);
-                                  const normalized = normalizeCode(code);
+                                  const { code, danger } = parseCodeInput(inputValue);
                                   setEditingRow({ 
                                     ...editingRow, 
-                                    codeDechet: normalized,
-                                    danger: danger || editingRow.danger
+                                    codeDechet: code,
+                                    danger: danger
                                   });
                                 }}
                                 className="px-2 py-1 border border-gray-300 rounded text-sm font-mono w-24"
@@ -670,7 +692,7 @@ export default function HierarchicalTreeView({ data, allRows = [], onDataChange 
                               />
                             ) : hasValidCode ? (
                               <span className="px-2 py-1 bg-green-100 text-green-800 rounded font-mono">
-                                {group.codeDechet}
+                                {formatCodeDechet(group.codeDechet, singleItem?.danger)}
                               </span>
                             ) : (
                               <span className="text-gray-400">-</span>
@@ -681,7 +703,10 @@ export default function HierarchicalTreeView({ data, allRows = [], onDataChange 
                               <input
                                 type="checkbox"
                                 checked={editingRow.danger === true}
-                                onChange={(e) => setEditingRow({ ...editingRow, danger: e.target.checked })}
+                                onChange={(e) => {
+                                  const isChecked = e.target.checked;
+                                  setEditingRow({ ...editingRow, danger: isChecked });
+                                }}
                                 className="w-4 h-4 text-red-600 border-gray-300 rounded focus:ring-red-500"
                                 title="Déchet dangereux"
                               />
@@ -691,8 +716,9 @@ export default function HierarchicalTreeView({ data, allRows = [], onDataChange 
                                 checked={singleItem?.danger === true}
                                 onChange={(e) => {
                                   if (singleItem?.__id) {
+                                    const isChecked = e.target.checked;
                                     const updated = localData.map(r =>
-                                      r.__id === singleItem.__id ? { ...r, danger: e.target.checked } : r
+                                      r.__id === singleItem.__id ? { ...r, danger: isChecked } : r
                                     );
                                     setLocalData(updated);
                                     if (onDataChange) onDataChange(updated);
@@ -768,7 +794,7 @@ export default function HierarchicalTreeView({ data, allRows = [], onDataChange 
                         </tr>
                         {isGroupExpanded && sortedItems.map((item, itemIdx) => {
                           const isEditing = editingRow?.__id === item.__id;
-                          const itemHasCode = item.codeDechet && item.codeDechet.trim().length === 6;
+                          const itemHasCode = isValidCodeDechet(item.codeDechet);
                           return (
                             <tr key={item.__id || `item-${itemIdx}`} className={`hover:bg-gray-50 ${itemHasCode ? '' : 'bg-red-50'}`}>
                               <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-600 pl-6">
@@ -830,16 +856,14 @@ export default function HierarchicalTreeView({ data, allRows = [], onDataChange 
                                 {isEditing && editingRow ? (
                                   <input
                                     type="text"
-                                    value={editingRow.codeDechet || ''}
+                                    value={formatCodeDechet(editingRow.codeDechet, editingRow.danger)}
                                     onChange={(e) => {
                                       const inputValue = e.target.value;
-                                      // Détecter si le code contient un astérisque
-                                      const { code, danger } = parseCodeDechetWithDanger(inputValue);
-                                      const normalized = normalizeCode(code);
+                                      const { code, danger } = parseCodeInput(inputValue);
                                       setEditingRow({ 
                                         ...editingRow, 
-                                        codeDechet: normalized,
-                                        danger: danger || editingRow.danger
+                                        codeDechet: code,
+                                        danger: danger
                                       });
                                     }}
                                     className="px-2 py-1 border border-gray-300 rounded text-sm font-mono w-24"
@@ -848,7 +872,7 @@ export default function HierarchicalTreeView({ data, allRows = [], onDataChange 
                                   />
                                 ) : itemHasCode ? (
                                   <span className="px-2 py-1 bg-green-100 text-green-800 rounded font-mono">
-                                    {item.codeDechet}
+                                    {formatCodeDechet(item.codeDechet, item.danger)}
                                   </span>
                                 ) : (
                                   <span className="text-gray-400">-</span>
@@ -859,7 +883,10 @@ export default function HierarchicalTreeView({ data, allRows = [], onDataChange 
                                   <input
                                     type="checkbox"
                                     checked={editingRow.danger === true}
-                                    onChange={(e) => setEditingRow({ ...editingRow, danger: e.target.checked })}
+                                    onChange={(e) => {
+                                      const isChecked = e.target.checked;
+                                      setEditingRow({ ...editingRow, danger: isChecked });
+                                    }}
                                     className="w-4 h-4 text-red-600 border-gray-300 rounded focus:ring-red-500"
                                     title="Déchet dangereux"
                                   />
@@ -869,8 +896,9 @@ export default function HierarchicalTreeView({ data, allRows = [], onDataChange 
                                     checked={item.danger === true}
                                     onChange={(e) => {
                                       if (item.__id) {
+                                        const isChecked = e.target.checked;
                                         const updated = localData.map(r =>
-                                          r.__id === item.__id ? { ...r, danger: e.target.checked } : r
+                                          r.__id === item.__id ? { ...r, danger: isChecked } : r
                                         );
                                         setLocalData(updated);
                                         if (onDataChange) onDataChange(updated);

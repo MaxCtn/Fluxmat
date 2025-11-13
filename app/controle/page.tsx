@@ -6,6 +6,7 @@ import Header from '../../components/Header';
 import Footer from '../../components/Footer';
 import { useRouter } from 'next/navigation';
 import { AlertModal } from '../../components/Modal';
+import { isValidCodeDechet } from '@/lib/wasteUtils';
 
 export default function ControlePage() {
   const router = useRouter();
@@ -26,8 +27,8 @@ export default function ControlePage() {
   }, []);
 
   function onValidateCorrections(rows: any[]) {
-    const fixed = rows.filter(r => r.codeDechet && r.codeDechet.length === 6);
-    const remaining = rows.filter(r => !r.codeDechet || r.codeDechet.length !== 6);
+    const fixed = rows.filter(r => isValidCodeDechet(r.codeDechet));
+    const remaining = rows.filter(r => !isValidCodeDechet(r.codeDechet));
     
     // Mettre à jour sessionStorage
     const updatedData = {
