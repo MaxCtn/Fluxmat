@@ -78,18 +78,45 @@ export default function ControlePage() {
 
   // Fonction pour gérer les changements de lignes en temps réel
   function handleRowsChange(updatedRows: any[]) {
-    // Séparer les lignes validées des lignes à contrôler
-    const validees = updatedRows.filter(r => isValidCodeDechet(r.codeDechet));
-    const aControler = updatedRows.filter(r => !isValidCodeDechet(r.codeDechet));
-    
-    // Mettre à jour les états
-    setControle(aControler);
-    setRegistre([...registre, ...validees.filter(v => !registre.some(r => r.__id === v.__id))]);
+    // On ne fait plus de validation automatique ici
+    // On met simplement à jour le controle sans déplacer vers le registre
+    setControle(updatedRows);
     
     // Mettre à jour sessionStorage
     saveToSessionStorage('fluxmat_data', {
-      registre: [...registre, ...validees.filter(v => !registre.some(r => r.__id === v.__id))],
-      controle: aControler,
+      registre: registre,
+      controle: updatedRows,
+      fileName: fileName || ''
+    });
+  }
+  
+  // Fonction pour valider manuellement une ou plusieurs lignes
+  function handleValidateRows(rowsToValidate: any[]) {
+    const newlyValid = rowsToValidate.filter(r => isValidCodeDechet(r.codeDechet));
+    const remainingControle = controle.filter(c => !newlyValid.some(v => v.__id === c.__id));
+    const updatedRegistre = [...registre, ...newlyValid.filter(v => !registre.some(r => r.__id === v.__id))];
+    
+    setRegistre(updatedRegistre);
+    setControle(remainingControle);
+    
+    saveToSessionStorage('fluxmat_data', {
+      registre: updatedRegistre,
+      controle: remainingControle,
+      fileName: fileName || ''
+    });
+  }
+  
+  // Fonction pour dé-valider une ligne (remonter du registre vers controle)
+  function handleUnvalidateRow(row: any) {
+    const updatedRegistre = registre.filter(r => r.__id !== row.__id);
+    const updatedControle = [...controle, row];
+    
+    setRegistre(updatedRegistre);
+    setControle(updatedControle);
+    
+    saveToSessionStorage('fluxmat_data', {
+      registre: updatedRegistre,
+      controle: updatedControle,
       fileName: fileName || ''
     });
   }
@@ -287,19 +314,24 @@ export default function ControlePage() {
         {/* Tableau de contrôle */}
         {controle.length > 0 && (
           <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-            <ControlTable rows={controle} onValidate={onValidateCorrections} onRowsChange={handleRowsChange} />
+            <ControlTable 
+              rows={controle} 
+              onValidate={onValidateCorrections} 
+              onRowsChange={handleRowsChange}
+              onValidateRows={handleValidateRows}
+            />
           </div>
         )}
 
         {/* Tableau des lignes validées */}
         {registre.length > 0 && (
-          <div className="rounded-xl border-2 border-green-200 bg-white p-6 shadow-sm mt-6">
+          <div className="rounded-xl border-2 border-green-200 bg-white p-6 shadow-sm mt-6 animate-fade-in">
             <div className="flex items-center gap-3 mb-4">
-              <div className="h-10 w-10 rounded-full bg-green-600 flex items-center justify-center text-white font-bold">
+              <div className="h-10 w-10 rounded-full bg-green-600 flex items-center justify-center text-white font-bold transition-all duration-300">
                 {registre.length}
               </div>
               <div>
-                <h3 className="text-lg font-semibold text-green-900">Lignes avec code déchet validé</h3>
+                <h3 className="text-lg font-semibold text-green-900">{registre.length} Lignes avec code déchet validé</h3>
                 <p className="text-sm text-green-700">Ces lignes sont prêtes pour l'export</p>
               </div>
             </div>
@@ -313,11 +345,12 @@ export default function ControlePage() {
                     <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase">Unité</th>
                     <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase">Code déchet</th>
                     <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase">Danger</th>
+                    <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-green-200">
                   {registre.map((r, i) => (
-                    <tr key={r.__id ?? `registre-${i}`} className="bg-white hover:bg-green-50 transition">
+                    <tr key={r.__id ?? `registre-${i}`} className="bg-white hover:bg-green-50 transition-colors duration-200">
                       <td className="px-3 py-2 whitespace-nowrap text-sm">{r.dateExpedition ?? r.Date ?? '-'}</td>
                       <td className="px-3 py-2 text-sm">{r.denominationUsuelle ?? r['Libellé Ressource'] ?? '-'}</td>
                       <td className="px-3 py-2 text-center text-sm">{r.quantite ?? r.Quantité ?? '-'}</td>
@@ -333,6 +366,15 @@ export default function ControlePage() {
                         ) : (
                           <span className="text-gray-400">-</span>
                         )}
+                      </td>
+                      <td className="px-3 py-2 text-center">
+                        <button
+                          onClick={() => handleUnvalidateRow(r)}
+                          className="rounded-lg px-3 py-1 text-sm font-medium text-orange-600 hover:text-orange-700 hover:bg-orange-50 transition-all duration-200 border border-orange-200 hover:scale-105 active:scale-95"
+                          title="Replacer dans les suggestions"
+                        >
+                          ↑ Replacer
+                        </button>
                       </td>
                     </tr>
                   ))}

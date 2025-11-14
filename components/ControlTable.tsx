@@ -71,7 +71,7 @@ function getRowIdentifier(row: any, fallback: string | number) {
   return String(row?.__id ?? fallback);
 }
 
-export default function ControlTable({ rows, onValidate, onRowsChange }: { rows: any[]; onValidate: (rows: any[]) => void; onRowsChange?: (rows: any[]) => void }) {
+export default function ControlTable({ rows, onValidate, onRowsChange, onValidateRows }: { rows: any[]; onValidate: (rows: any[]) => void; onRowsChange?: (rows: any[]) => void; onValidateRows?: (rows: any[]) => void }) {
   const [allRows, setAllRows] = useState<any[]>([]);
   const [editMode, setEditMode] = useState(false);
   const [editingRow, setEditingRow] = useState<any | null>(null);
@@ -205,6 +205,21 @@ export default function ControlTable({ rows, onValidate, onRowsChange }: { rows:
       setToastMessage(`Aucune suggestion trouvée - ligne marquée "à définir"`);
     }
   }
+  
+  function handleValidateRow(row: any) {
+    if (onValidateRows && isValidCodeDechet(row.codeDechet)) {
+      onValidateRows([row]);
+      setToastMessage(`Ligne validée !`);
+    }
+  }
+  
+  function handleValidateAllRows() {
+    const validRows = allRows.filter(r => isValidCodeDechet(r.codeDechet));
+    if (onValidateRows && validRows.length > 0) {
+      onValidateRows(validRows);
+      setToastMessage(`${validRows.length} lignes validées !`);
+    }
+  }
 
   function handleModify(row: any) {
     setEditingRow(row);
@@ -296,14 +311,22 @@ export default function ControlTable({ rows, onValidate, onRowsChange }: { rows:
       <div className="flex gap-3 mb-6">
         <button
           onClick={autoCompleteAll}
-          className="rounded-lg bg-blue-50 text-blue-900 px-4 py-2 text-sm font-medium hover:bg-blue-100 transition shadow-sm hover:shadow-md disabled:opacity-50 border border-blue-200"
+          className="rounded-lg bg-blue-50 text-blue-900 px-4 py-2 text-sm font-medium hover:bg-blue-100 transition-all duration-200 shadow-sm hover:shadow-md hover:scale-105 active:scale-95 disabled:opacity-50 border border-blue-200"
           disabled={rowsAvecSuggestion.length === 0 && rowsADefinir.length === 0}
         >
           Auto-compléter toutes les lignes
         </button>
+        {allRows.some(r => isValidCodeDechet(r.codeDechet)) && (
+          <button
+            onClick={handleValidateAllRows}
+            className="rounded-lg bg-green-600 text-white px-4 py-2 text-sm font-medium hover:bg-green-700 transition-all duration-200 shadow-md hover:shadow-lg hover:scale-105 active:scale-95"
+          >
+            Valider toutes les lignes
+          </button>
+        )}
         <button
           onClick={() => setEditMode(!editMode)}
-          className={`rounded-lg border-2 px-4 py-2 text-sm font-medium transition ${
+          className={`rounded-lg border-2 px-4 py-2 text-sm font-medium transition-all duration-200 ${
             editMode
               ? 'border-red-200 bg-red-50 text-red-700'
               : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
@@ -316,8 +339,8 @@ export default function ControlTable({ rows, onValidate, onRowsChange }: { rows:
       {/* Tableau 1: Lignes avec suggestion (BLEU) */}
       {rowsAvecSuggestion.length > 0 && (
         <div className="border-2 border-blue-200 rounded-xl p-6 bg-blue-50 animate-fade-in shadow-sm">
-          <h3 className="text-lg font-semibold text-blue-900 mb-4">
-            Lignes avec suggestion ({rowsAvecSuggestion.length})
+          <h3 className="text-lg font-semibold text-blue-900 mb-4 transition-all duration-300">
+            {rowsAvecSuggestion.length} Lignes avec suggestion
           </h3>
           <div className="overflow-x-auto">
             <table className="table w-full">
@@ -359,8 +382,8 @@ export default function ControlTable({ rows, onValidate, onRowsChange }: { rows:
                     className="px-3 py-2 text-center"
                   />
                   <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase">Danger</th>
-                  <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase">Auto</th>
-                  {editMode && <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase">Actions</th>}
+                  <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase">Actions</th>
+                  {editMode && <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase">Édition</th>}
                 </tr>
               </thead>
               <tbody className="divide-y divide-blue-200">
@@ -369,8 +392,9 @@ export default function ControlTable({ rows, onValidate, onRowsChange }: { rows:
                   const rowIdentifier = getRowIdentifier(r, `blue-${i}`);
                   const codeInputId = `code-dechet-${rowIdentifier}`;
                   const dangerInputId = `danger-flag-${rowIdentifier}`;
+                  const hasValidCode = isValidCodeDechet(r.codeDechet);
                   return (
-                    <tr key={rowIdentifier} className="bg-white hover:bg-blue-50 transition">
+                    <tr key={rowIdentifier} className="bg-white hover:bg-blue-50 transition-colors duration-200">
                       <td className="px-3 py-2 whitespace-nowrap">{formatDate(r.dateExpedition ?? r.Date ?? '')}</td>
                       <td className="px-3 py-2">{r.denominationUsuelle ?? r['Libellé Ressource'] ?? ''}</td>
                       <td className="px-3 py-2 text-center">{r.quantite ?? r.Quantité ?? ''}</td>
@@ -422,12 +446,26 @@ export default function ControlTable({ rows, onValidate, onRowsChange }: { rows:
                         />
                       </td>
                       <td className="px-3 py-2 text-center">
-                        <button
-                          className="rounded-lg px-3 py-1 text-sm font-medium bg-gray-100 text-gray-700 hover:bg-gray-200 transition border border-gray-300"
-                          onClick={() => handleAutoForRow(r)}
-                        >
-                          Auto
-                        </button>
+                        <div className="flex gap-2 justify-center">
+                          {!hasValidCode && (
+                            <button
+                              className="rounded-lg px-3 py-1 text-sm font-medium bg-blue-100 text-blue-700 hover:bg-blue-200 transition-all duration-200 border border-blue-300 hover:scale-105 active:scale-95"
+                              onClick={() => handleAutoForRow(r)}
+                              title="Appliquer la suggestion"
+                            >
+                              Suggestion
+                            </button>
+                          )}
+                          {hasValidCode && (
+                            <button
+                              className="rounded-lg px-3 py-1 text-sm font-medium bg-green-600 text-white hover:bg-green-700 transition-all duration-200 shadow-sm hover:shadow-md hover:scale-105 active:scale-95"
+                              onClick={() => handleValidateRow(r)}
+                              title="Valider cette ligne"
+                            >
+                              Valider
+                            </button>
+                          )}
+                        </div>
                       </td>
                       {editMode && (
                         <td className="px-3 py-2 text-center">
@@ -461,8 +499,8 @@ export default function ControlTable({ rows, onValidate, onRowsChange }: { rows:
       {/* Tableau 2: Lignes à définir (GRIS) */}
       {rowsADefinir.length > 0 && (
         <div className="border-2 border-gray-200 rounded-xl p-6 bg-gray-50 animate-fade-in shadow-sm">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">
-            Lignes à définir ({rowsADefinir.length})
+          <h3 className="text-lg font-semibold text-gray-900 mb-4 transition-all duration-300">
+            {rowsADefinir.length} Lignes à définir
           </h3>
           <div className="overflow-x-auto">
             <table className="table w-full">
@@ -504,8 +542,8 @@ export default function ControlTable({ rows, onValidate, onRowsChange }: { rows:
                     className="px-3 py-2 text-center"
                   />
                   <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase">Danger</th>
-                  <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase">Auto</th>
-                  {editMode && <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase">Actions</th>}
+                  <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase">Actions</th>
+                  {editMode && <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase">Édition</th>}
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
@@ -513,8 +551,9 @@ export default function ControlTable({ rows, onValidate, onRowsChange }: { rows:
                   const rowIdentifier = getRowIdentifier(r, `gray-${i}`);
                   const codeInputId = `manual-code-${rowIdentifier}`;
                   const dangerInputId = `manual-danger-${rowIdentifier}`;
+                  const hasValidCode = isValidCodeDechet(r.codeDechet);
                   return (
-                    <tr key={rowIdentifier} className="bg-white hover:bg-gray-50 transition">
+                    <tr key={rowIdentifier} className="bg-white hover:bg-gray-50 transition-colors duration-200">
                     <td className="px-3 py-2 whitespace-nowrap">{formatDate(r.dateExpedition ?? r.Date ?? '')}</td>
                     <td className="px-3 py-2">{r.denominationUsuelle ?? r['Libellé Ressource'] ?? ''}</td>
                     <td className="px-3 py-2 text-center">{r.quantite ?? r.Quantité ?? ''}</td>
@@ -566,13 +605,17 @@ export default function ControlTable({ rows, onValidate, onRowsChange }: { rows:
                       />
                     </td>
                     <td className="px-3 py-2 text-center">
-                      <button
-                        className="rounded-lg px-3 py-1 text-sm font-medium bg-gray-100 text-gray-700 hover:bg-gray-200 transition border border-gray-300"
-                        onClick={() => handleAutoForRow(r)}
-                        title="Aucune suggestion disponible"
-                      >
-                        Auto
-                      </button>
+                      {hasValidCode ? (
+                        <button
+                          className="rounded-lg px-3 py-1 text-sm font-medium bg-green-600 text-white hover:bg-green-700 transition-all duration-200 shadow-sm hover:shadow-md hover:scale-105 active:scale-95"
+                          onClick={() => handleValidateRow(r)}
+                          title="Valider cette ligne"
+                        >
+                          Valider
+                        </button>
+                      ) : (
+                        <span className="text-gray-400 text-sm">-</span>
+                      )}
                     </td>
                     {editMode && (
                       <td className="px-3 py-2 text-center">
@@ -606,8 +649,8 @@ export default function ControlTable({ rows, onValidate, onRowsChange }: { rows:
       {/* Tableau 3: Lignes validées (VERT) */}
       {rowsValidees.length > 0 && (
         <div className="border-2 border-green-200 rounded-xl p-6 bg-green-50 animate-fade-in shadow-sm">
-          <h3 className="text-lg font-semibold text-green-900 mb-4">
-            Lignes avec code déchet validé ({rowsValidees.length})
+          <h3 className="text-lg font-semibold text-green-900 mb-4 transition-all duration-300">
+            {rowsValidees.length} Lignes avec code déchet validé
           </h3>
       <div className="overflow-x-auto">
             <table className="table w-full">
@@ -710,19 +753,7 @@ export default function ControlTable({ rows, onValidate, onRowsChange }: { rows:
                       />
                     </td>
                     <td className="px-3 py-2 text-center">
-                      <button
-                        className="rounded-lg px-3 py-1 text-sm font-medium text-red-600 hover:bg-red-50 transition border border-red-200"
-                        onClick={() => {
-                          const idx = allRows.findIndex(row => row.__id === r.__id);
-                          if (idx >= 0) {
-                            const next = [...allRows];
-                            next[idx].codeDechet = '';
-                            setAllRows(next);
-                          }
-                        }}
-                      >
-                        Retirer
-                      </button>
+                      <span className="text-green-600 text-sm font-semibold">✓ Validée</span>
                     </td>
                     {editMode && (
                       <td className="px-3 py-2 text-center">
