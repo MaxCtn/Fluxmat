@@ -15,7 +15,11 @@ export type RegistreRow = {
   "destinataire.raisonSociale"?: string;
   __id?: string;
 };
-export type TransformResult = { registre: RegistreRow[]; controle: (Depense & { suggestionCodeDechet?: string; __id?: string })[]; };
+export type TransformResult = { 
+  registre: RegistreRow[]; 
+  controle: (Depense & { suggestionCodeDechet?: string; __id?: string })[];
+  allWasteRows: RegistreRow[]; // Tableau unifié avec toutes les lignes déchets (avec ou sans code), trié initialement
+};
 
 const CODE_DECHET_REGEX = /[\s_]*(\d{2})\s*(\d{2})\s*(\d{2})\s*$/;
 function normalizeKey(s: string): string {
@@ -40,6 +44,7 @@ export function isMateriauLike(label: string | undefined): boolean {
 /**
  * Convertit une date dans différents formats vers DD/MM/YYYY
  * Gère : dates Excel (nombres), DD/MM/YYYY, YYYY-MM-DD, dates JavaScript
+ * Utilise UTC pour éviter les décalages d'un jour dus au fuseau horaire
  */
 function toFrDate(v: any): string {
   if (!v) return "";
@@ -47,15 +52,16 @@ function toFrDate(v: any): string {
   const vStr = String(v).trim();
   if (!vStr) return "";
   
-  // Si c'est déjà au format DD/MM/YYYY, le retourner tel quel
-  if (/^\d{2}\/\d{2}\/\d{4}$/.test(vStr)) {
-    return vStr;
+  // Si c'est au format DD/MM/YYYY avec ou sans heure → ne garder que la date
+  const frDateMatch = vStr.match(/^(\d{2})\/(\d{2})\/(\d{4})(?:\s+\d{1,2}:\d{2}(?::\d{2})?)?(?:\s+[AP]M)?$/i);
+  if (frDateMatch) {
+    return `${frDateMatch[1]}/${frDateMatch[2]}/${frDateMatch[3]}`;
   }
   
-  // Si c'est au format YYYY-MM-DD, le convertir
-  if (/^\d{4}-\d{2}-\d{2}$/.test(vStr)) {
-    const parts = vStr.split('-');
-    return `${parts[2]}/${parts[1]}/${parts[0]}`;
+  // Si c'est au format YYYY-MM-DD (avec ou sans temps), le convertir
+  const isoMatch = vStr.match(/^(\d{4})-(\d{2})-(\d{2})(?:[T\s]\d{2}:\d{2}(?::\d{2})?(?:\.\d+)?(?:Z|[+\-]\d{2}:\d{2})?)?$/);
+  if (isoMatch) {
+    return `${isoMatch[3]}/${isoMatch[2]}/${isoMatch[1]}`;
   }
   
   // Si c'est un nombre (date Excel sérialisée)
@@ -64,24 +70,30 @@ function toFrDate(v: any): string {
     if (excelDate > 0 && excelDate < 100000) {
       // Dates Excel : nombre de jours depuis le 30 décembre 1899
       // Excel compte le 1er janvier 1900 comme jour 1 (bug Excel : c'est en fait jour 2)
-      const excelEpoch = new Date(1899, 11, 30); // 30 décembre 1899
-      const date = new Date(excelEpoch.getTime() + (excelDate - 1) * 24 * 60 * 60 * 1000);
+      // Utiliser UTC pour éviter les décalages dus au fuseau horaire
+      // Note: excelEpoch (1899-12-30) corrige déjà le bug Excel, donc pas besoin de -1
+      const excelEpoch = Date.UTC(1899, 11, 30); // 30 décembre 1899 en UTC
+      const dateMs = excelEpoch + excelDate * 24 * 60 * 60 * 1000;
+      const date = new Date(dateMs);
       
       if (!isNaN(date.getTime())) {
-        const dd = String(date.getDate()).padStart(2, "0");
-        const mm = String(date.getMonth() + 1).padStart(2, "0");
-        const yyyy = date.getFullYear();
+        // Utiliser UTC pour éviter les décalages
+        const dd = String(date.getUTCDate()).padStart(2, "0");
+        const mm = String(date.getUTCMonth() + 1).padStart(2, "0");
+        const yyyy = date.getUTCFullYear();
         return `${dd}/${mm}/${yyyy}`;
       }
     }
   }
   
   // Essayer de parser avec Date JavaScript native
+  // Si c'est une date avec heure, extraire uniquement la partie date en UTC
   const d = new Date(v);
   if (!isNaN(d.getTime())) {
-    const dd = String(d.getDate()).padStart(2, "0");
-    const mm = String(d.getMonth() + 1).padStart(2, "0");
-    const yyyy = d.getFullYear();
+    // Utiliser UTC pour éviter les décalages dus au fuseau horaire
+    const dd = String(d.getUTCDate()).padStart(2, "0");
+    const mm = String(d.getUTCMonth() + 1).padStart(2, "0");
+    const yyyy = d.getUTCFullYear();
     return `${dd}/${mm}/${yyyy}`;
   }
   
@@ -218,13 +230,15 @@ function passesFilter(row: any): boolean {
 
 let rowId=0;
 export function transform(rows: Depense[]): TransformResult & { allRows?: Depense[] } {
-  const registre: RegistreRow[]=[]; const controle: (Depense & { suggestionCodeDechet?: string; __id?: string })[]=[];
+  const registre: RegistreRow[]=[]; 
+  const controle: (Depense & { suggestionCodeDechet?: string; __id?: string })[]=[];
 
   console.log(`[TRANSFORM] Début transformation de ${rows.length} lignes`);
 
   for (const row of rows) {
     // Extraire le libellé ressource d'abord
-    const label = get(row, ["Libellé Ressource","Libelle Ressource","Libellé Article","Libelle Article"]) ?? "";
+    const rawLabel = get(row, ["Libellé Ressource","Libelle Ressource","Libellé Article","Libelle Article"]);
+    const label = rawLabel ?? "";
     
     // 1. FILTRE PRINCIPAL : Est-ce que le libellé décrit un déchet physique ?
     if (!isWaste(label)) {
@@ -258,6 +272,7 @@ export function transform(rows: Depense[]): TransformResult & { allRows?: Depens
     const { codeCED: ced } = extractCedCode(label);
     // Convertir null en undefined pour compatibilité TypeScript
     const codeDechet = ced || undefined;
+    const hasExplicitCode = Boolean(codeDechet);
     
     // Suggérer un code déchet depuis les mots-clés si pas de code explicite
     let suggestionCodeDechet: string | undefined;
@@ -281,9 +296,9 @@ export function transform(rows: Depense[]): TransformResult & { allRows?: Depens
       dateExpedition: toFrDate(date),
       quantite, 
       codeUnite: normUnit(unite),
-      denominationUsuelle: String(label || "").replace(/\s+/g," ").trim(),
+      denominationUsuelle: typeof rawLabel === "string" ? rawLabel : String(label || "").replace(/\s+/g," ").trim(),
       codeDechet, // Code déchet si trouvé, sinon undefined
-      danger: dangerValue, // Déchet dangereux ou non
+      danger: hasExplicitCode ? dangerValue : undefined, // Ne marquer dangereux que si code explicite
       // Nouveaux champs avec mapping
       etablissement: etablissement || undefined,
       agence: agence || undefined,
@@ -297,7 +312,7 @@ export function transform(rows: Depense[]): TransformResult & { allRows?: Depens
     };
 
     // Séparer les déchets selon qu'ils ont un code CED explicite ou non
-    if (codeDechet && codeDechet.length === 6) {
+    if (hasExplicitCode && codeDechet?.length === 6) {
       // Déchet avec code CED explicite → va dans registre (prêt à l'export)
       registre.push(base);
     } else {
@@ -307,7 +322,7 @@ export function transform(rows: Depense[]): TransformResult & { allRows?: Depens
       raw["denominationUsuelle"]=base.denominationUsuelle;
       raw["quantite"]=base.quantite; 
       raw["codeUnite"]=base.codeUnite;
-      raw["danger"]=dangerValue; // Ajouter le champ danger
+      raw["danger"]=dangerValue; // Ajouter le champ danger pour suggestion
       // Nouveaux champs avec mapping
       raw["etablissement"]=base.etablissement;
       raw["agence"]=base.agence;
@@ -322,6 +337,36 @@ export function transform(rows: Depense[]): TransformResult & { allRows?: Depens
     }
   }
   
-  console.log(`[TRANSFORM] Transformation terminée: ${registre.length} lignes avec code déchet (registre), ${controle.length} lignes sans code (contrôle)`);
-  return { registre, controle, allRows: rows };
+  // Créer le tableau unifié avec toutes les lignes (avec et sans code)
+  // Convertir les lignes de controle en RegistreRow pour avoir un format uniforme
+  const controleAsRegistre: RegistreRow[] = controle.map(raw => ({
+    dateExpedition: raw.dateExpedition || "",
+    quantite: raw.quantite || 0,
+    codeUnite: raw.codeUnite || "T",
+    denominationUsuelle: raw.denominationUsuelle || "",
+    codeDechet: undefined, // Pas de code déchet pour les lignes sans code
+    danger: undefined, // Pas de danger sans code explicite
+    etablissement: raw.etablissement,
+    agence: raw.agence,
+    chantier: raw.chantier,
+    exutoire: raw.exutoire,
+    "producteur.raisonSociale": raw["producteur.raisonSociale"] || "",
+    "producteur.adresse.libelle": raw["producteur.adresse.libelle"] || "",
+    "destinataire.raisonSociale": raw["destinataire.raisonSociale"],
+    __id: raw.__id || `c${rowId++}`
+  }));
+  
+  // Fusionner et trier : lignes avec code en premier
+  const allWasteRows: RegistreRow[] = [...registre, ...controleAsRegistre].sort((a, b) => {
+    // Lignes avec codeDechet en premier
+    const aHasCode = Boolean(a.codeDechet);
+    const bHasCode = Boolean(b.codeDechet);
+    if (aHasCode && !bHasCode) return -1;
+    if (!aHasCode && bHasCode) return 1;
+    // Sinon garder l'ordre d'origine (peut être re-trié par l'UI)
+    return 0;
+  });
+  
+  console.log(`[TRANSFORM] Transformation terminée: ${registre.length} lignes avec code déchet (registre), ${controle.length} lignes sans code (contrôle), ${allWasteRows.length} lignes totales unifiées`);
+  return { registre, controle, allWasteRows, allRows: rows };
 }

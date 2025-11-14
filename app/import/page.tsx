@@ -63,6 +63,7 @@ export default function ImportPage() {
   const [fileName, setFileName] = useState<string | undefined>();
   const [registre, setRegistre] = useState<any[]>([]);
   const [controle, setControle] = useState<any[]>([]);
+  const [allWasteRows, setAllWasteRows] = useState<any[]>([]);
   const [allRows, setAllRows] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -73,6 +74,7 @@ export default function ImportPage() {
       const data = JSON.parse(saved);
       setRegistre(data.registre || []);
       setControle(data.controle || []);
+      setAllWasteRows(data.allWasteRows || []);
       setAllRows(data.allRows || []);
       setFileName(data.fileName);
     }
@@ -87,15 +89,18 @@ export default function ImportPage() {
     const data = await res.json();
     const newRegistre = data.registre ?? [];
     const newControle = data.controle ?? [];
+    const newAllWasteRows = data.allWasteRows ?? [];
     const newAllRows = data.allRows ?? [];
     setRegistre(newRegistre);
     setControle(newControle);
+    setAllWasteRows(newAllWasteRows);
     setAllRows(newAllRows);
     
     // Sauvegarder dans sessionStorage avec gestion d'erreur
     saveToSessionStorage('fluxmat_data', {
       registre: newRegistre,
       controle: newControle,
+      allWasteRows: newAllWasteRows,
       fileName: file.name
     });
     
@@ -107,6 +112,7 @@ export default function ImportPage() {
     const success = saveToSessionStorage('fluxmat_data', {
       registre,
       controle,
+      allWasteRows,
       fileName
     });
     
@@ -116,9 +122,10 @@ export default function ImportPage() {
   }
 
   // Toutes les lignes (pour les compteurs - toujours affichées sans filtres)
+  // Utiliser allWasteRows qui contient toutes les lignes unifiées (avec et sans code)
   const toutesLesLignes = useMemo(() => {
-    return [...registre, ...controle];
-  }, [registre, controle]);
+    return allWasteRows.length > 0 ? allWasteRows : [...registre, ...controle];
+  }, [allWasteRows, registre, controle]);
 
   // Compteurs calculés à partir de toutes les lignes (non filtrées)
   const totalLignes = toutesLesLignes.length;

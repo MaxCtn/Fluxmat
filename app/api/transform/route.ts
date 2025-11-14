@@ -21,11 +21,12 @@ export async function POST(req: NextRequest) {
     // Utiliser la fonction transform qui applique les filtres
     const result = transform(rows);
     
-    console.log(`[TRANSFORM] Résultat: ${result.registre.length} registre (avec code), ${result.controle.length} contrôle (sans code)`);
+    console.log(`[TRANSFORM] Résultat: ${result.registre.length} registre (avec code), ${result.controle.length} contrôle (sans code), ${result.allWasteRows?.length || 0} lignes unifiées`);
     
     return NextResponse.json({ 
       registre: result.registre, 
       controle: result.controle,
+      allWasteRows: result.allWasteRows || [],
       allRows: result.allRows || []
     });
   } catch (e:any) {
