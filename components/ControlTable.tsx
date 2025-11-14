@@ -1,6 +1,7 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Toast from './Toast';
+import SortableHeader, { SortDirection } from './SortableHeader';
 import { suggestCodeDechet, isDangerousCode, parseCodeDechetWithDanger, isValidCodeDechet } from '@/lib/wasteUtils';
 
 /**
@@ -66,45 +67,73 @@ function formatDate(dateValue: any): string {
   return String(dateValue);
 }
 
-export default function ControlTable({ rows, onValidate }: { rows: any[]; onValidate: (rows: any[]) => void }) {
+function getRowIdentifier(row: any, fallback: string | number) {
+  return String(row?.__id ?? fallback);
+}
+
+export default function ControlTable({ rows, onValidate, onRowsChange }: { rows: any[]; onValidate: (rows: any[]) => void; onRowsChange?: (rows: any[]) => void }) {
   const [allRows, setAllRows] = useState<any[]>([]);
   const [editMode, setEditMode] = useState(false);
   const [editingRow, setEditingRow] = useState<any | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [sortState, setSortState] = useState<{ key: string; direction: SortDirection } | null>(null);
+  const syncingFromParent = useRef(false);
 
   useEffect(() => {
+    syncingFromParent.current = true;
     const updatedRows = rows.map(r => ({ ...r }));
     setAllRows(updatedRows);
   }, [rows]);
 
+  // Notifier le parent quand allRows change
+  useEffect(() => {
+    if (syncingFromParent.current) {
+      syncingFromParent.current = false;
+      return;
+    }
+    if (onRowsChange && allRows.length > 0) {
+      onRowsChange(allRows);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allRows]);
+
+  // Récupère la suggestion (code + danger) en priorité depuis `suggestionCodeDechet`
+  function getSuggestionWithDanger(row: any): { code: string; danger?: boolean } | null {
+    if (row.suggestionCodeDechet) {
+      const parsed = parseCodeDechetWithDanger(String(row.suggestionCodeDechet));
+      if (!parsed.code) return null;
+      const danger = row.danger ?? parsed.danger;
+      return { code: parsed.code, danger };
+    }
+
+    const label = row.denominationUsuelle || row['Libellé Ressource'] || '';
+    const match = suggestCodeDechet(label);
+    if (!match) return null;
+    return { code: match.codeCED, danger: match.danger };
+  }
+
   // Catégoriser les lignes
   const rowsValidees = allRows.filter(r => isValidCodeDechet(r.codeDechet));
   const rowsAvecSuggestion = allRows.filter(r => {
-    if (isValidCodeDechet(r.codeDechet)) return false; // Déjà validée
-    const label = r.denominationUsuelle || r['Libellé Ressource'] || '';
-    const match = suggestCodeDechet(label);
-    return match !== null;
+    if (isValidCodeDechet(r.codeDechet)) return false;
+    return getSuggestionWithDanger(r) !== null;
   });
   const rowsADefinir = allRows.filter(r => {
-    if (isValidCodeDechet(r.codeDechet)) return false; // Déjà validée
-    const label = r.denominationUsuelle || r['Libellé Ressource'] || '';
-    const match = suggestCodeDechet(label);
-    return match === null;
+    if (isValidCodeDechet(r.codeDechet)) return false;
+    return getSuggestionWithDanger(r) === null;
   });
 
   // Fonction pour suggérer le code déchet d'une ligne
   function getSuggestionForRow(row: any): string | null {
-    const label = row.denominationUsuelle || row['Libellé Ressource'] || '';
-    const match = suggestCodeDechet(label);
-    return match ? match.codeCED : null;
+    const info = getSuggestionWithDanger(row);
+    return info ? info.code : null;
   }
 
   // Fonction pour obtenir le danger depuis la suggestion
   function getDangerForRow(row: any): boolean | undefined {
-    const label = row.denominationUsuelle || row['Libellé Ressource'] || '';
-    const match = suggestCodeDechet(label);
-    return match?.danger;
+    const info = getSuggestionWithDanger(row);
+    return info?.danger;
   }
 
   function autoCompleteAll() {
@@ -199,36 +228,88 @@ export default function ControlTable({ rows, onValidate }: { rows: any[]; onVali
     setConfirmDelete(null);
   }
 
+  // Gestion du tri
+  const handleSort = (key: string) => {
+    setSortState(prev => {
+      if (prev?.key === key) {
+        // Cycle: asc -> desc -> null -> asc
+        if (prev.direction === 'asc') {
+          return { key, direction: 'desc' };
+        } else if (prev.direction === 'desc') {
+          return null;
+        }
+      }
+      return { key, direction: 'asc' };
+    });
+  };
+
+  // Fonction de tri pour les lignes
+  const sortRows = (rows: any[], sortKey: string | null, sortDirection: SortDirection): any[] => {
+    if (!sortKey || !sortDirection) {
+      return rows;
+    }
+
+    const sorted = [...rows].sort((a, b) => {
+      let comparison = 0;
+
+      switch (sortKey) {
+        case 'date':
+          const dateA = formatDate(a.dateExpedition ?? a.Date ?? '');
+          const dateB = formatDate(b.dateExpedition ?? b.Date ?? '');
+          comparison = dateA.localeCompare(dateB);
+          break;
+        case 'denomination':
+          const denomA = a.denominationUsuelle ?? a['Libellé Ressource'] ?? '';
+          const denomB = b.denominationUsuelle ?? b['Libellé Ressource'] ?? '';
+          comparison = denomA.localeCompare(denomB);
+          break;
+        case 'quantite':
+          const qtyA = Number(a.quantite ?? a.Quantité ?? 0);
+          const qtyB = Number(b.quantite ?? b.Quantité ?? 0);
+          comparison = qtyA - qtyB;
+          break;
+        case 'unite':
+          const uniteA = a.codeUnite ?? a.Unité ?? '';
+          const uniteB = b.codeUnite ?? b.Unité ?? '';
+          comparison = uniteA.localeCompare(uniteB);
+          break;
+        case 'codeDechet':
+          const codeA = a.codeDechet ?? '';
+          const codeB = b.codeDechet ?? '';
+          comparison = codeA.localeCompare(codeB);
+          break;
+        default:
+          return 0;
+      }
+
+      return sortDirection === 'asc' ? comparison : -comparison;
+    });
+
+    return sorted;
+  };
+
   if (!rows.length) return <div className="text-gray-500 text-sm">Rien à afficher.</div>;
 
   return (
     <div className="space-y-6">
       {/* Actions */}
-      <div className="flex justify-between items-center gap-4 flex-wrap">
-        <div className="flex gap-3">
-          <button
-            onClick={autoCompleteAll}
-            className="rounded-lg bg-blue-50 text-blue-900 px-4 py-2 text-sm font-medium hover:bg-blue-100 transition shadow-sm hover:shadow-md disabled:opacity-50 border border-blue-200"
-            disabled={rowsAvecSuggestion.length === 0 && rowsADefinir.length === 0}
-          >
-            Auto-compléter toutes les lignes
-          </button>
-          <button
-            onClick={() => setEditMode(!editMode)}
-            className={`rounded-lg border-2 px-4 py-2 text-sm font-medium transition ${
-              editMode
-                ? 'border-red-200 bg-red-50 text-red-700'
-                : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
-            }`}
-          >
-            {editMode ? 'Mode édition: ON' : 'Mode édition: OFF'}
-          </button>
-        </div>
+      <div className="flex gap-3 mb-6">
         <button
-          className="rounded-lg bg-red-600 px-6 py-2 text-sm font-medium text-white hover:bg-red-700 transition shadow-md hover:shadow-lg"
-          onClick={() => onValidate(allRows)}
+          onClick={autoCompleteAll}
+          className="rounded-lg bg-blue-50 text-blue-900 px-4 py-2 text-sm font-medium hover:bg-blue-100 transition shadow-sm hover:shadow-md disabled:opacity-50 border border-blue-200"
+          disabled={rowsAvecSuggestion.length === 0 && rowsADefinir.length === 0}
         >
-          Finaliser et continuer →
+          Auto-compléter toutes les lignes
+        </button>
+        <button
+          onClick={() => setEditMode(!editMode)}
+          className={`rounded-lg border-2 px-4 py-2 text-sm font-medium transition ${
+            editMode
+              ? 'border-red-200 bg-red-50 text-red-700'
+              : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
+          }`}
+        >
+          {editMode ? 'Mode édition: ON' : 'Mode édition: OFF'}
         </button>
       </div>
 
@@ -242,31 +323,62 @@ export default function ControlTable({ rows, onValidate }: { rows: any[]; onVali
             <table className="table w-full">
               <thead className="bg-blue-50">
                 <tr className="border-b-2 border-blue-200">
-                  <th className="px-3 py-2 text-left">Date</th>
-                  <th className="px-3 py-2 text-left">Dénomination</th>
-                  <th className="px-3 py-2 text-left">Agence</th>
-                  <th className="px-3 py-2 text-left">Chantier</th>
-                  <th className="px-3 py-2 text-center">Quantité</th>
-                  <th className="px-3 py-2 text-center">Unité</th>
-                  <th className="px-3 py-2 text-center">Code déchet</th>
-                  <th className="px-3 py-2 text-center">Danger</th>
-                  <th className="px-3 py-2 text-center">Auto</th>
-                  {editMode && <th className="px-3 py-2 text-center">Actions</th>}
+                  <SortableHeader 
+                    label="Date" 
+                    sortKey="date" 
+                    currentSort={sortState} 
+                    onSort={handleSort}
+                    className="px-3 py-2"
+                  />
+                  <SortableHeader 
+                    label="Dénomination" 
+                    sortKey="denomination" 
+                    currentSort={sortState} 
+                    onSort={handleSort}
+                    className="px-3 py-2"
+                  />
+                  <SortableHeader 
+                    label="Quantité" 
+                    sortKey="quantite" 
+                    currentSort={sortState} 
+                    onSort={handleSort}
+                    className="px-3 py-2 text-center"
+                  />
+                  <SortableHeader 
+                    label="Unité" 
+                    sortKey="unite" 
+                    currentSort={sortState} 
+                    onSort={handleSort}
+                    className="px-3 py-2 text-center"
+                  />
+                  <SortableHeader 
+                    label="Code déchet" 
+                    sortKey="codeDechet" 
+                    currentSort={sortState} 
+                    onSort={handleSort}
+                    className="px-3 py-2 text-center"
+                  />
+                  <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase">Danger</th>
+                  <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase">Auto</th>
+                  {editMode && <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase">Actions</th>}
                 </tr>
               </thead>
               <tbody className="divide-y divide-blue-200">
-                {rowsAvecSuggestion.map((r, i) => {
+                {sortRows(rowsAvecSuggestion, sortState?.key || null, sortState?.direction || null).map((r, i) => {
                   const suggestion = getSuggestionForRow(r);
+                  const rowIdentifier = getRowIdentifier(r, `blue-${i}`);
+                  const codeInputId = `code-dechet-${rowIdentifier}`;
+                  const dangerInputId = `danger-flag-${rowIdentifier}`;
                   return (
-                    <tr key={r.__id ?? `blue-${i}`} className="bg-white hover:bg-blue-50 transition">
+                    <tr key={rowIdentifier} className="bg-white hover:bg-blue-50 transition">
                       <td className="px-3 py-2 whitespace-nowrap">{formatDate(r.dateExpedition ?? r.Date ?? '')}</td>
                       <td className="px-3 py-2">{r.denominationUsuelle ?? r['Libellé Ressource'] ?? ''}</td>
-                      <td className="px-3 py-2">{r['producteur.raisonSociale'] ?? r['Libellé Entité'] ?? ''}</td>
-                      <td className="px-3 py-2">{r['producteur.adresse.libelle'] ?? r['Libellé Chantier'] ?? ''}</td>
                       <td className="px-3 py-2 text-center">{r.quantite ?? r.Quantité ?? ''}</td>
                       <td className="px-3 py-2 text-center">{r.codeUnite ?? r.Unité ?? ''}</td>
                       <td className="px-3 py-2">
                         <input
+                          id={codeInputId}
+                          name={codeInputId}
                           className="input w-24 text-center"
                           placeholder={suggestion || "170302"}
                           value={formatCodeDechet(r.codeDechet, r.danger)}
@@ -287,6 +399,8 @@ export default function ControlTable({ rows, onValidate }: { rows: any[]; onVali
                       </td>
                       <td className="px-3 py-2 text-center">
                         <input
+                          id={dangerInputId}
+                          name={dangerInputId}
                           type="checkbox"
                           checked={r.danger === true}
                           onChange={(e) => {
@@ -354,33 +468,65 @@ export default function ControlTable({ rows, onValidate }: { rows: any[]; onVali
             <table className="table w-full">
               <thead className="bg-gray-100">
                 <tr className="border-b-2 border-gray-300">
-                  <th className="px-3 py-2 text-left">Date</th>
-                  <th className="px-3 py-2 text-left">Dénomination</th>
-                  <th className="px-3 py-2 text-left">Agence</th>
-                  <th className="px-3 py-2 text-left">Chantier</th>
-                  <th className="px-3 py-2 text-center">Quantité</th>
-                  <th className="px-3 py-2 text-center">Unité</th>
-                  <th className="px-3 py-2 text-center">Code déchet</th>
-                  <th className="px-3 py-2 text-center">Danger</th>
-                  <th className="px-3 py-2 text-center">Auto</th>
-                  {editMode && <th className="px-3 py-2 text-center">Actions</th>}
+                  <SortableHeader 
+                    label="Date" 
+                    sortKey="date" 
+                    currentSort={sortState} 
+                    onSort={handleSort}
+                    className="px-3 py-2"
+                  />
+                  <SortableHeader 
+                    label="Dénomination" 
+                    sortKey="denomination" 
+                    currentSort={sortState} 
+                    onSort={handleSort}
+                    className="px-3 py-2"
+                  />
+                  <SortableHeader 
+                    label="Quantité" 
+                    sortKey="quantite" 
+                    currentSort={sortState} 
+                    onSort={handleSort}
+                    className="px-3 py-2 text-center"
+                  />
+                  <SortableHeader 
+                    label="Unité" 
+                    sortKey="unite" 
+                    currentSort={sortState} 
+                    onSort={handleSort}
+                    className="px-3 py-2 text-center"
+                  />
+                  <SortableHeader 
+                    label="Code déchet" 
+                    sortKey="codeDechet" 
+                    currentSort={sortState} 
+                    onSort={handleSort}
+                    className="px-3 py-2 text-center"
+                  />
+                  <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase">Danger</th>
+                  <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase">Auto</th>
+                  {editMode && <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase">Actions</th>}
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
-                {rowsADefinir.map((r, i) => (
-                  <tr key={r.__id ?? `gray-${i}`} className="bg-white hover:bg-gray-50 transition">
+                {sortRows(rowsADefinir, sortState?.key || null, sortState?.direction || null).map((r, i) => {
+                  const rowIdentifier = getRowIdentifier(r, `gray-${i}`);
+                  const codeInputId = `manual-code-${rowIdentifier}`;
+                  const dangerInputId = `manual-danger-${rowIdentifier}`;
+                  return (
+                    <tr key={rowIdentifier} className="bg-white hover:bg-gray-50 transition">
                     <td className="px-3 py-2 whitespace-nowrap">{formatDate(r.dateExpedition ?? r.Date ?? '')}</td>
                     <td className="px-3 py-2">{r.denominationUsuelle ?? r['Libellé Ressource'] ?? ''}</td>
-                    <td className="px-3 py-2">{r['producteur.raisonSociale'] ?? r['Libellé Entité'] ?? ''}</td>
-                    <td className="px-3 py-2">{r['producteur.adresse.libelle'] ?? r['Libellé Chantier'] ?? ''}</td>
                     <td className="px-3 py-2 text-center">{r.quantite ?? r.Quantité ?? ''}</td>
                     <td className="px-3 py-2 text-center">{r.codeUnite ?? r.Unité ?? ''}</td>
                     <td className="px-3 py-2">
-                      <input
-                        className="input w-24 text-center"
-                        placeholder="Manuel"
-                        value={formatCodeDechet(r.codeDechet, r.danger)}
-                        onChange={(e) => {
+                        <input
+                          id={codeInputId}
+                          name={codeInputId}
+                          className="input w-24 text-center"
+                          placeholder="Manuel"
+                          value={formatCodeDechet(r.codeDechet, r.danger)}
+                          onChange={(e) => {
                           const idx = allRows.findIndex(row => row.__id === r.__id);
                           if (idx >= 0) {
                             const next = [...allRows];
@@ -397,6 +543,8 @@ export default function ControlTable({ rows, onValidate }: { rows: any[]; onVali
                     </td>
                     <td className="px-3 py-2 text-center">
                       <input
+                        id={dangerInputId}
+                        name={dangerInputId}
                         type="checkbox"
                         checked={r.danger === true}
                         onChange={(e) => {
@@ -446,8 +594,9 @@ export default function ControlTable({ rows, onValidate }: { rows: any[]; onVali
                         </div>
                       </td>
                     )}
-                  </tr>
-                ))}
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -464,29 +613,61 @@ export default function ControlTable({ rows, onValidate }: { rows: any[]; onVali
             <table className="table w-full">
               <thead className="bg-green-50">
                 <tr className="border-b-2 border-green-200">
-                  <th className="px-3 py-2 text-left">Date</th>
-                  <th className="px-3 py-2 text-left">Dénomination</th>
-                  <th className="px-3 py-2 text-left">Agence</th>
-                  <th className="px-3 py-2 text-left">Chantier</th>
-                  <th className="px-3 py-2 text-center">Quantité</th>
-                  <th className="px-3 py-2 text-center">Unité</th>
-                  <th className="px-3 py-2 text-center">Code déchet</th>
-                  <th className="px-3 py-2 text-center">Danger</th>
-                  <th className="px-3 py-2 text-center">Action</th>
-                  {editMode && <th className="px-3 py-2 text-center">Actions</th>}
+                  <SortableHeader 
+                    label="Date" 
+                    sortKey="date" 
+                    currentSort={sortState} 
+                    onSort={handleSort}
+                    className="px-3 py-2"
+                  />
+                  <SortableHeader 
+                    label="Dénomination" 
+                    sortKey="denomination" 
+                    currentSort={sortState} 
+                    onSort={handleSort}
+                    className="px-3 py-2"
+                  />
+                  <SortableHeader 
+                    label="Quantité" 
+                    sortKey="quantite" 
+                    currentSort={sortState} 
+                    onSort={handleSort}
+                    className="px-3 py-2 text-center"
+                  />
+                  <SortableHeader 
+                    label="Unité" 
+                    sortKey="unite" 
+                    currentSort={sortState} 
+                    onSort={handleSort}
+                    className="px-3 py-2 text-center"
+                  />
+                  <SortableHeader 
+                    label="Code déchet" 
+                    sortKey="codeDechet" 
+                    currentSort={sortState} 
+                    onSort={handleSort}
+                    className="px-3 py-2 text-center"
+                  />
+                  <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase">Danger</th>
+                  <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase">Action</th>
+                  {editMode && <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase">Actions</th>}
                 </tr>
           </thead>
               <tbody className="divide-y divide-green-200">
-                {rowsValidees.map((r, i) => (
-                  <tr key={r.__id ?? `green-${i}`} className="bg-white hover:bg-green-50 transition">
+                {sortRows(rowsValidees, sortState?.key || null, sortState?.direction || null).map((r, i) => {
+                  const rowIdentifier = getRowIdentifier(r, `green-${i}`);
+                  const codeInputId = `validated-code-${rowIdentifier}`;
+                  const dangerInputId = `validated-danger-${rowIdentifier}`;
+                  return (
+                    <tr key={rowIdentifier} className="bg-white hover:bg-green-50 transition">
                     <td className="px-3 py-2 whitespace-nowrap">{formatDate(r.dateExpedition ?? r.Date ?? '')}</td>
                     <td className="px-3 py-2">{r.denominationUsuelle ?? r['Libellé Ressource'] ?? ''}</td>
-                    <td className="px-3 py-2">{r['producteur.raisonSociale'] ?? r['Libellé Entité'] ?? ''}</td>
-                    <td className="px-3 py-2">{r['producteur.adresse.libelle'] ?? r['Libellé Chantier'] ?? ''}</td>
                     <td className="px-3 py-2 text-center">{r.quantite ?? r.Quantité ?? ''}</td>
                     <td className="px-3 py-2 text-center">{r.codeUnite ?? r.Unité ?? ''}</td>
                     <td className="px-3 py-2">
                       <input
+                        id={codeInputId}
+                        name={codeInputId}
                         className="input w-24 bg-white text-center"
                         value={formatCodeDechet(r.codeDechet, r.danger)}
                         onChange={(e) => {
@@ -506,6 +687,8 @@ export default function ControlTable({ rows, onValidate }: { rows: any[]; onVali
                     </td>
                     <td className="px-3 py-2 text-center">
                       <input
+                        id={dangerInputId}
+                        name={dangerInputId}
                         type="checkbox"
                         checked={r.danger === true}
                         onChange={(e) => {
@@ -561,8 +744,9 @@ export default function ControlTable({ rows, onValidate }: { rows: any[]; onVali
                         </div>
                       </td>
                     )}
-              </tr>
-            ))}
+                    </tr>
+                  );
+                })}
           </tbody>
         </table>
       </div>
@@ -592,6 +776,7 @@ export default function ControlTable({ rows, onValidate }: { rows: any[]; onVali
 
 function EditModal({ row, onSave, onCancel }: { row: any; onSave: (row: any) => void; onCancel: () => void }) {
   const [edited, setEdited] = useState(row);
+  const baseId = row.__id ? `edit-${row.__id}` : 'edit-row';
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-md animate-fade-in">
@@ -604,8 +789,10 @@ function EditModal({ row, onSave, onCancel }: { row: any; onSave: (row: any) => 
         </div>
         <div className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">Date</label>
+            <label htmlFor={`${baseId}-date`} className="block text-sm font-medium text-gray-300 mb-2">Date</label>
             <input
+              id={`${baseId}-date`}
+              name={`${baseId}-date`}
               type="text"
               value={formatDate(edited.dateExpedition ?? edited.Date ?? '')}
               onChange={(e) => setEdited({ ...edited, dateExpedition: e.target.value, Date: e.target.value })}
@@ -613,8 +800,10 @@ function EditModal({ row, onSave, onCancel }: { row: any; onSave: (row: any) => 
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">Quantité</label>
+            <label htmlFor={`${baseId}-quantite`} className="block text-sm font-medium text-gray-300 mb-2">Quantité</label>
             <input
+              id={`${baseId}-quantite`}
+              name={`${baseId}-quantite`}
               type="number"
               value={edited.quantite ?? edited.Quantité ?? ''}
               onChange={(e) => setEdited({ ...edited, quantite: e.target.value, Quantité: e.target.value })}
@@ -622,8 +811,10 @@ function EditModal({ row, onSave, onCancel }: { row: any; onSave: (row: any) => 
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">Unité</label>
+            <label htmlFor={`${baseId}-unite`} className="block text-sm font-medium text-gray-300 mb-2">Unité</label>
             <input
+              id={`${baseId}-unite`}
+              name={`${baseId}-unite`}
               type="text"
               value={edited.codeUnite ?? edited.Unité ?? ''}
               onChange={(e) => setEdited({ ...edited, codeUnite: e.target.value, Unité: e.target.value })}
@@ -631,8 +822,10 @@ function EditModal({ row, onSave, onCancel }: { row: any; onSave: (row: any) => 
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">Code Déchet</label>
+            <label htmlFor={`${baseId}-code`} className="block text-sm font-medium text-gray-300 mb-2">Code Déchet</label>
             <input
+              id={`${baseId}-code`}
+              name={`${baseId}-code`}
               type="text"
               value={formatCodeDechet(edited.codeDechet, edited.danger)}
               onChange={(e) => {
@@ -644,8 +837,10 @@ function EditModal({ row, onSave, onCancel }: { row: any; onSave: (row: any) => 
             />
           </div>
           <div>
-            <label className="flex items-center gap-2 text-sm font-medium text-gray-300 mb-2">
+            <label className="flex items-center gap-2 text-sm font-medium text-gray-300 mb-2" htmlFor={`${baseId}-danger`}>
               <input
+                id={`${baseId}-danger`}
+                name={`${baseId}-danger`}
                 type="checkbox"
                 checked={edited.danger === true}
                 onChange={(e) => {
@@ -657,8 +852,10 @@ function EditModal({ row, onSave, onCancel }: { row: any; onSave: (row: any) => 
             </label>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">Ressource</label>
+            <label htmlFor={`${baseId}-ressource`} className="block text-sm font-medium text-gray-300 mb-2">Ressource</label>
             <textarea
+              id={`${baseId}-ressource`}
+              name={`${baseId}-ressource`}
               value={edited.denominationUsuelle ?? edited['Libellé Ressource'] ?? ''}
               onChange={(e) => setEdited({ ...edited, denominationUsuelle: e.target.value, 'Libellé Ressource': e.target.value })}
               className="w-full rounded-lg bg-white/5 border border-white/20 px-3 py-2 outline-none focus:ring-2 focus:ring-cyan-500 text-white resize-none"
@@ -666,8 +863,10 @@ function EditModal({ row, onSave, onCancel }: { row: any; onSave: (row: any) => 
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">Entité</label>
+            <label htmlFor={`${baseId}-entite`} className="block text-sm font-medium text-gray-300 mb-2">Entité</label>
             <input
+              id={`${baseId}-entite`}
+              name={`${baseId}-entite`}
               type="text"
               value={edited['producteur.raisonSociale'] ?? edited['Libellé Entité'] ?? ''}
               onChange={(e) => setEdited({ ...edited, 'producteur.raisonSociale': e.target.value, 'Libellé Entité': e.target.value })}
@@ -675,8 +874,10 @@ function EditModal({ row, onSave, onCancel }: { row: any; onSave: (row: any) => 
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">Chantier</label>
+            <label htmlFor={`${baseId}-chantier`} className="block text-sm font-medium text-gray-300 mb-2">Chantier</label>
             <input
+              id={`${baseId}-chantier`}
+              name={`${baseId}-chantier`}
               type="text"
               value={edited['producteur.adresse.libelle'] ?? edited['Libellé Chantier'] ?? ''}
               onChange={(e) => setEdited({ ...edited, 'producteur.adresse.libelle': e.target.value, 'Libellé Chantier': e.target.value })}

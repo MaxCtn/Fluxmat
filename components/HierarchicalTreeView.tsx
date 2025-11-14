@@ -17,6 +17,7 @@ interface RowData {
   agence?: string;
   chantier?: string;
   exutoire?: string;
+  typeCamion?: string | null;
   [key: string]: any;
 }
 
@@ -454,6 +455,14 @@ export default function HierarchicalTreeView({ data, allRows = [], onDataChange 
    * Associe les lignes de "Pointage matériel" aux lignes de déchets par date et chantier
    */
   const extractTruckType = (row: RowData): string => {
+    const backendType =
+      row.typeCamion ??
+      row.transportTruckType ??
+      row['typeCamion'];
+    if (backendType && String(backendType).trim().length > 0) {
+      return String(backendType).trim();
+    }
+    
     // Si c'est déjà une ligne de pointage matériel, extraire directement
     const origine = row['Origine'] || row['Libellé Origine'] || row['Libelle Origine'] || '';
     if (String(origine).includes('Pointage matériel')) {
@@ -620,6 +629,7 @@ export default function HierarchicalTreeView({ data, allRows = [], onDataChange 
                           <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900 font-medium">
                             {isEditingSingle && editingRow ? (
                               <input
+                                name="group-date"
                                 type="text"
                                 value={editingRow.dateExpedition || ''}
                                 onChange={(e) => setEditingRow({ ...editingRow, dateExpedition: e.target.value })}
@@ -633,6 +643,7 @@ export default function HierarchicalTreeView({ data, allRows = [], onDataChange 
                           <td className="px-3 py-2 text-sm text-gray-900 font-medium">
                             {isEditingSingle && editingRow ? (
                               <input
+                                name="group-denomination"
                                 type="text"
                                 value={editingRow.denominationUsuelle || editingRow['Libellé Ressource'] || ''}
                                 onChange={(e) => setEditingRow({ ...editingRow, denominationUsuelle: e.target.value, 'Libellé Ressource': e.target.value })}
@@ -645,6 +656,7 @@ export default function HierarchicalTreeView({ data, allRows = [], onDataChange 
                           <td className="px-3 py-2 text-center whitespace-nowrap text-sm text-gray-900 font-medium">
                             {isEditingSingle && editingRow ? (
                               <input
+                                name="group-quantity"
                                 type="number"
                                 value={editingRow.quantite || 0}
                                 onChange={(e) => setEditingRow({ ...editingRow, quantite: Number(e.target.value) })}
@@ -675,6 +687,7 @@ export default function HierarchicalTreeView({ data, allRows = [], onDataChange 
                           <td className="px-3 py-2 text-center whitespace-nowrap text-sm">
                             {isEditingSingle && editingRow ? (
                               <input
+                                name="group-code"
                                 type="text"
                                 value={formatCodeDechet(editingRow.codeDechet, editingRow.danger)}
                                 onChange={(e) => {
@@ -701,6 +714,7 @@ export default function HierarchicalTreeView({ data, allRows = [], onDataChange 
                           <td className="px-3 py-2 text-center whitespace-nowrap text-sm">
                             {isEditingSingle && editingRow ? (
                               <input
+                                name="group-danger-edit"
                                 type="checkbox"
                                 checked={editingRow.danger === true}
                                 onChange={(e) => {
@@ -712,6 +726,7 @@ export default function HierarchicalTreeView({ data, allRows = [], onDataChange 
                               />
                             ) : (
                               <input
+                                name="group-danger-toggle"
                                 type="checkbox"
                                 checked={singleItem?.danger === true}
                                 onChange={(e) => {
@@ -800,6 +815,7 @@ export default function HierarchicalTreeView({ data, allRows = [], onDataChange 
                               <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-600 pl-6">
                                 {isEditing && editingRow ? (
                                   <input
+                                    name="item-date"
                                     type="text"
                                     value={editingRow.dateExpedition || ''}
                                     onChange={(e) => setEditingRow({ ...editingRow, dateExpedition: e.target.value })}
@@ -813,6 +829,7 @@ export default function HierarchicalTreeView({ data, allRows = [], onDataChange 
                               <td className="px-3 py-2 text-sm text-gray-600">
                                 {isEditing && editingRow ? (
                                   <input
+                                    name="item-denomination"
                                     type="text"
                                     value={editingRow.denominationUsuelle || editingRow['Libellé Ressource'] || ''}
                                     onChange={(e) => setEditingRow({ ...editingRow, denominationUsuelle: e.target.value, 'Libellé Ressource': e.target.value })}
@@ -825,6 +842,7 @@ export default function HierarchicalTreeView({ data, allRows = [], onDataChange 
                               <td className="px-3 py-2 text-center whitespace-nowrap text-sm text-gray-600">
                                 {isEditing && editingRow ? (
                                   <input
+                                    name="item-quantity"
                                     type="number"
                                     value={editingRow.quantite || 0}
                                     onChange={(e) => setEditingRow({ ...editingRow, quantite: Number(e.target.value) })}
@@ -855,6 +873,7 @@ export default function HierarchicalTreeView({ data, allRows = [], onDataChange 
                               <td className="px-3 py-2 text-center whitespace-nowrap text-sm">
                                 {isEditing && editingRow ? (
                                   <input
+                                    name="item-code"
                                     type="text"
                                     value={formatCodeDechet(editingRow.codeDechet, editingRow.danger)}
                                     onChange={(e) => {
@@ -881,6 +900,7 @@ export default function HierarchicalTreeView({ data, allRows = [], onDataChange 
                               <td className="px-3 py-2 text-center whitespace-nowrap text-sm">
                                 {isEditing && editingRow ? (
                                   <input
+                                    name="item-danger-edit"
                                     type="checkbox"
                                     checked={editingRow.danger === true}
                                     onChange={(e) => {
@@ -892,6 +912,7 @@ export default function HierarchicalTreeView({ data, allRows = [], onDataChange 
                                   />
                                 ) : (
                                   <input
+                                    name="item-danger-toggle"
                                     type="checkbox"
                                     checked={item.danger === true}
                                     onChange={(e) => {

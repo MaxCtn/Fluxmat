@@ -10,7 +10,13 @@ export interface WasteMatch {
   codeCED: string; // Format "170302" (sans espaces)
   label: string;
   categorie: string;
-  danger?: boolean; // Nouveau champ : déchet dangereux ou non
+  danger?: boolean; // Déchet dangereux ou non
+}
+
+export interface WasteClassification extends WasteMatch {
+  isWaste: boolean;
+  hasExplicitCode: boolean;
+  suggestionCodeDechet?: string;
 }
 
 /**
@@ -103,6 +109,16 @@ function buildPermissiveKeywords(): Set<string> {
 // Liste globale des mots-clés permissifs (calculée une seule fois)
 const PERMISSIVE_KEYWORDS = buildPermissiveKeywords();
 
+const WASTE_PRIORITY: Record<WasteMapItem['categorie'], number> = {
+  'Déchet dangereux': 1,
+  'Déchet inerte': 2,
+  'Déchet non dangereux': 3
+};
+
+const DEFAULT_SORTED_WASTE_MAP: WasteMapItem[] = [...WASTE_MAP].sort(
+  (a, b) => (WASTE_PRIORITY[a.categorie] || 999) - (WASTE_PRIORITY[b.categorie] || 999)
+);
+
 /**
  * Extrait un code CED explicite depuis un texte
  * Format accepté : "17 03 02", "170302", "17-03-02", "_17 01 07"
@@ -160,18 +176,18 @@ export function extractCedCode(text: string): { codeCED: string | null } {
  * Utilise des word boundaries (\b) pour éviter les faux positifs
  * Évite de classifier "terre polluée" comme "terre non polluée"
  */
-export function matchWasteKeywords(normalizedText: string, wasteMap: WasteMapItem[] = WASTE_MAP): WasteMatch | null {
+export function matchWasteKeywords(
+  normalizedText: string,
+  wasteMap: WasteMapItem[] = DEFAULT_SORTED_WASTE_MAP
+): WasteMatch | null {
   if (!normalizedText) return null;
   
-  // Trier WASTE_MAP par priorité : Dangereux > Inerte > Non dangereux
-  const sortedMap = [...wasteMap].sort((a, b) => {
-    const priority: Record<string, number> = {
-      "Déchet dangereux": 1,
-      "Déchet inerte": 2,
-      "Déchet non dangereux": 3
-    };
-    return (priority[a.categorie] || 999) - (priority[b.categorie] || 999);
-  });
+  const sortedMap =
+    wasteMap === DEFAULT_SORTED_WASTE_MAP || wasteMap === WASTE_MAP
+      ? DEFAULT_SORTED_WASTE_MAP
+      : [...wasteMap].sort(
+          (a, b) => (WASTE_PRIORITY[a.categorie] || 999) - (WASTE_PRIORITY[b.categorie] || 999)
+        );
   
   const matches: Array<{ item: WasteMapItem; pattern: string; specificity: number }> = [];
   
@@ -295,69 +311,16 @@ export function suggestCodeDechet(
   label: string | undefined,
   source?: 'ATELIER' | 'LABO' | 'DEPOT'
 ): WasteMatch | null {
-  if (!label) return null;
-  
-  // 1. PRIORITÉ : Chercher dans la table de correspondance
-  const correspondanceMatch = findInCorrespondanceTable(label, source);
-  if (correspondanceMatch) {
-    // Convertir le code déchet (format "13 02 05*") en format sans espaces
-    const codeCED = correspondanceMatch.codeDechet.replace(/\s/g, '').replace(/\*/g, '');
-    
-    // Déterminer la catégorie basée sur le danger
-    let categorie: string;
-    if (correspondanceMatch.danger) {
-      categorie = "Déchet dangereux";
-    } else {
-      // Essayer de déterminer depuis le code CED
-      const codeStart = codeCED.slice(0, 2);
-      if (codeStart === '17') {
-        categorie = "Déchet inerte";
-      } else {
-        categorie = "Déchet non dangereux";
-      }
-    }
-    
-    return {
-      codeCED,
-      label: correspondanceMatch.formulationCatalogue,
-      categorie,
-      danger: correspondanceMatch.danger
-    };
+  const classification = classifyWaste(label, source);
+  if (!classification.isWaste || !classification.codeCED) {
+    return null;
   }
-  
-  // 2. Essayer d'extraire un code CED explicite (texte original pour préserver les caractères spéciaux)
-  const { codeCED } = extractCedCode(label);
-  if (codeCED) {
-    // Si on trouve un code explicite, chercher son label dans WASTE_MAP
-    const codeWithoutSpaces = codeCED;
-    const codeWithSpaces = `${codeCED.slice(0, 2)} ${codeCED.slice(2, 4)} ${codeCED.slice(4, 6)}`;
-    
-    for (const item of WASTE_MAP) {
-      const itemCode = item.codeCED.replace(/\s/g, '');
-      if (itemCode === codeWithoutSpaces) {
-        const isDangerous = item.categorie === "Déchet dangereux" || item.codeCED.includes('*');
-        return {
-          codeCED: codeWithoutSpaces,
-          label: item.label,
-          categorie: item.categorie,
-          danger: isDangerous
-        };
-      }
-    }
-    
-    // Si code trouvé mais pas dans WASTE_MAP, vérifier si le label original contient un astérisque
-    const hasAsteriskInLabel = isDangerousCode(label);
-    return {
-      codeCED: codeWithoutSpaces,
-      label: `Code CED ${codeWithSpaces}`,
-      categorie: "Non défini",
-      danger: hasAsteriskInLabel
-    };
-  }
-  
-  // 3. Fallback : chercher par mots-clés dans WASTE_MAP (normaliser pour la recherche)
-  const normalized = normalizeText(label);
-  return matchWasteKeywords(normalized);
+  return {
+    codeCED: classification.codeCED,
+    label: classification.label,
+    categorie: classification.categorie,
+    danger: classification.danger
+  };
 }
 
 /**
@@ -399,65 +362,122 @@ function hasPermissiveWasteKeywords(normalizedText: string): boolean {
  * Le mode permissif a été supprimé pour éviter les faux positifs (ex: "D16 BI BENNE 16T")
  */
 export function isWaste(label: string | undefined): boolean {
-  if (!label) return false;
-  
+  return classifyWaste(label).isWaste;
+}
+
+function buildEmptyClassification(label: string | undefined): WasteClassification {
+  return {
+    isWaste: false,
+    hasExplicitCode: false,
+    codeCED: '',
+    label: label ?? '',
+    categorie: '',
+    danger: false
+  };
+}
+
+export function classifyWaste(
+  label: string | undefined,
+  source?: 'ATELIER' | 'LABO' | 'DEPOT'
+): WasteClassification {
+  if (!label) {
+    return buildEmptyClassification(label);
+  }
+
   const normalized = normalizeText(label);
-  
-  // EXCLUSIONS EXPLICITES : ne pas considérer comme déchets
-  
-  // 1. Exclusion : "MATERIAUX POUR NEGOCE CARRIERE" n'est pas un déchet
-  // C'est plutôt un flux matière (achat/revente) qu'un déchet à éliminer
-  if (normalized.includes('negoce carriere') || normalized.includes('négoce carrière') || 
-      normalized.includes('materiaux pour negoce') || normalized.includes('matériaux pour négoce')) {
-    return false;
+
+  // EXCLUSIONS EXPLICITES
+  if (
+    normalized.includes('negoce carriere') ||
+    normalized.includes('négoce carrière') ||
+    normalized.includes('materiaux pour negoce') ||
+    normalized.includes('matériaux pour négoce')
+  ) {
+    return buildEmptyClassification(label);
   }
-  
-  // 2. Exclusion : Locations de matériel (ex: "LOC SCIE A SOL")
+
   if (normalized.trim().startsWith('loc ')) {
-    return false;
+    return buildEmptyClassification(label);
   }
-  
-  // 3. Exclusion : Camions/véhicules (ex: "D16 BI BENNE 16T")
-  // Patterns de véhicules : codes de camions (D16, D20, etc.), "BI BENNE" (benne de camion)
-  // "benne" seul sans contexte déchet = probablement un véhicule
+
   const vehiclePatterns = [
-    /^d\d+\s/, // D16, D20, etc. en début de ligne
-    /\bd\d+\s+bi\s+benne/i, // D16 BI BENNE
-    /\b(camion|vehicule)\b/i, // camion, véhicule
-    /\bbenne\s+\d+t\b/i, // BENNE 16T, BENNE 20T (sans contexte déchet)
-    /\bbenne\s+\d+m3\b/i, // BENNE 16M3, etc.
+    /^d\d+\s/,
+    /\bd\d+\s+bi\s+benne/i,
+    /\b(camion|vehicule)\b/i,
+    /\bbenne\s+\d+t\b/i,
+    /\bbenne\s+\d+m3\b/i
   ];
-  
-  // Si le texte contient "benne" mais pas de contexte déchet clair, c'est probablement un véhicule
+
   if (normalized.includes('benne')) {
-    // Vérifier si c'est un contexte de déchet (ex: "benne enrobe", "benne dechet")
     const wasteContext = /(benne\s+(enrobe|dechet|beton|terre|gravat|inert|ferraill|bois|dib|carton|papier|verre|vert|municipal|menager|huile|filtre|solvant|emballage|absorbant|epi|amiante|piles|batterie|deee|aerosol))/i;
     if (!wasteContext.test(normalized)) {
-      // Pas de contexte déchet clair, probablement un véhicule
-      return false;
+      return buildEmptyClassification(label);
     }
   }
-  
-  // Vérifier les autres patterns de véhicules
+
   for (const pattern of vehiclePatterns) {
     if (pattern.test(normalized)) {
-      return false;
+      return buildEmptyClassification(label);
     }
   }
-  
-  // VÉRIFICATIONS POSITIVES : est-ce un déchet ?
-  
-  // 1. Vérifier si on peut extraire un code CED explicite (le plus fiable)
-  // Passer le texte original pour préserver les underscores et caractères spéciaux
-  const { codeCED } = extractCedCode(label);
-  if (codeCED) return true;
-  
-  // 2. Vérifier si on peut matcher avec WASTE_MAP (mode strict uniquement)
-  // Plus de mode permissif pour éviter les faux positifs
-  const match = matchWasteKeywords(normalized);
-  if (match !== null) return true;
-  
-  // Si aucune condition n'est remplie, ce n'est pas un déchet
-  return false;
+
+  const { codeCED: explicitCode } = extractCedCode(label);
+  const hasExplicitCode = Boolean(explicitCode);
+  const labelHasAsterisk = isDangerousCode(label);
+
+  // 1) Table de correspondance
+  const correspondanceMatch = findInCorrespondanceTable(label, source);
+  if (correspondanceMatch) {
+    const { code, danger } = parseCodeDechetWithDanger(correspondanceMatch.codeDechet);
+    const categorie = danger ? 'Déchet dangereux' : 'Déchet non dangereux';
+    const finalDanger = hasExplicitCode ? (labelHasAsterisk || danger) : danger;
+    const selectedCode = explicitCode || code;
+    return {
+      isWaste: true,
+      hasExplicitCode,
+      codeCED: selectedCode,
+      suggestionCodeDechet: hasExplicitCode ? undefined : code,
+      label: correspondanceMatch.formulationCatalogue,
+      categorie,
+      danger: finalDanger
+    };
+  }
+
+  // 2) Code explicite dans le libellé
+  if (explicitCode) {
+    const item = DEFAULT_SORTED_WASTE_MAP.find(
+      entry => entry.codeCED.replace(/\s/g, '').replace(/\*/g, '') === explicitCode
+    );
+    const categorie = item?.categorie ?? 'Déchet non dangereux';
+    const danger =
+      labelHasAsterisk ||
+      item?.categorie === 'Déchet dangereux' ||
+      item?.codeCED.includes('*');
+
+    return {
+      isWaste: true,
+      hasExplicitCode: true,
+      codeCED: explicitCode,
+      label: item?.label ?? label,
+      categorie,
+      danger
+    };
+  }
+
+  // 3) Match WASTE_MAP
+  const keywordMatch = matchWasteKeywords(normalized);
+  if (keywordMatch) {
+    return {
+      isWaste: true,
+      hasExplicitCode: false,
+      codeCED: keywordMatch.codeCED,
+      suggestionCodeDechet: keywordMatch.codeCED,
+      label: keywordMatch.label,
+      categorie: keywordMatch.categorie,
+      danger: keywordMatch.danger
+    };
+  }
+
+  return buildEmptyClassification(label);
 }
 

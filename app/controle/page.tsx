@@ -5,7 +5,7 @@ import ControlTable from '../../components/ControlTable';
 import Header from '../../components/Header';
 import Footer from '../../components/Footer';
 import { useRouter } from 'next/navigation';
-import { AlertModal } from '../../components/Modal';
+import { AlertModal, ConfirmExportModal } from '../../components/Modal';
 import { isValidCodeDechet } from '@/lib/wasteUtils';
 
 // Fonction pour nettoyer les données avant stockage dans sessionStorage
@@ -63,6 +63,7 @@ export default function ControlePage() {
   const [registre, setRegistre] = useState<any[]>([]);
   const [fileName, setFileName] = useState<string | undefined>();
   const [modalState, setModalState] = useState({ isOpen: false, message: '', fixed: 0, remaining: 0 });
+  const [showConfirmExport, setShowConfirmExport] = useState(false);
 
   // Charger les données depuis sessionStorage
   useEffect(() => {
@@ -75,38 +76,88 @@ export default function ControlePage() {
     }
   }, []);
 
+  // Fonction pour gérer les changements de lignes en temps réel
+  function handleRowsChange(updatedRows: any[]) {
+    // Séparer les lignes validées des lignes à contrôler
+    const validees = updatedRows.filter(r => isValidCodeDechet(r.codeDechet));
+    const aControler = updatedRows.filter(r => !isValidCodeDechet(r.codeDechet));
+    
+    // Mettre à jour les états
+    setControle(aControler);
+    setRegistre([...registre, ...validees.filter(v => !registre.some(r => r.__id === v.__id))]);
+    
+    // Mettre à jour sessionStorage
+    saveToSessionStorage('fluxmat_data', {
+      registre: [...registre, ...validees.filter(v => !registre.some(r => r.__id === v.__id))],
+      controle: aControler,
+      fileName: fileName || ''
+    });
+  }
+
+  function handleConfirmExport() {
+    const newlyValidInControle = controle.filter(r => isValidCodeDechet(r.codeDechet));
+    const pendingControle = controle.filter(r => !isValidCodeDechet(r.codeDechet));
+    const safeRegistre = [
+      ...registre,
+      ...newlyValidInControle.filter(row => !registre.some(existing => existing.__id === row.__id))
+    ];
+
+    setRegistre(safeRegistre);
+    setControle(pendingControle);
+
+    // Mettre à jour sessionStorage avec les données actuelles
+    saveToSessionStorage('fluxmat_data', {
+      registre: safeRegistre,
+      controle: pendingControle,
+      fileName: fileName || ''
+    });
+    
+    // Fermer la modal et rediriger
+    setShowConfirmExport(false);
+    router.push('/export');
+  }
+
   function onValidateCorrections(rows: any[]) {
     const fixed = rows.filter(r => isValidCodeDechet(r.codeDechet));
     const remaining = rows.filter(r => !isValidCodeDechet(r.codeDechet));
     
+    const updatedRegistre = [...(registre), ...fixed];
+    
     // Mettre à jour sessionStorage avec gestion d'erreur
     saveToSessionStorage('fluxmat_data', {
-      registre: [...(registre), ...fixed],
+      registre: updatedRegistre,
       controle: remaining,
       fileName: fileName || ''
     });
     
     setControle(remaining);
-    setRegistre([...registre, ...fixed]);
+    setRegistre(updatedRegistre);
+    
+    // Calculer les compteurs pour le message
+    const withCode = updatedRegistre.length;
+    const withoutCode = remaining.length;
+    const total = withCode + withoutCode;
     
     if (remaining.length === 0) {
       setModalState({ 
         isOpen: true, 
-        message: 'Toutes les lignes ont été corrigées ! Redirection vers l\'export.',
+        message: `Toutes les lignes exportables ont un code déchet (${withCode} lignes). Redirection vers l'export...`,
         fixed: fixed.length,
         remaining: 0 
       });
-      setTimeout(() => {
-        router.push('/export');
-      }, 2000);
     } else {
       setModalState({ 
         isOpen: true, 
-        message: `${fixed.length} lignes corrigées. ${remaining.length} lignes restent à traiter.`,
+        message: `${withCode} lignes avec code seront exportées. ${withoutCode} lignes restent sans code. Redirection vers l'export...`,
         fixed: fixed.length,
         remaining: remaining.length 
       });
     }
+    
+    // Toujours rediriger vers l'export après 2 secondes
+    setTimeout(() => {
+      router.push('/export');
+    }, 2000);
   }
 
   async function handleReportLater() {
@@ -155,20 +206,25 @@ export default function ControlePage() {
     }
   }
 
-  if (!controle.length) {
+  // Calculer les stats
+  const lignesAvecCode = registre.length;
+  const lignesSansCode = controle.length;
+  const totalLignes = lignesAvecCode + lignesSansCode;
+
+  if (!controle.length && !registre.length) {
     return (
       <main className="min-h-dvh bg-gray-50">
         <Header />
         <section className="mx-auto max-w-7xl px-4 py-10">
           <div className="rounded-xl border border-gray-200 bg-white p-8 text-center shadow-sm">
             <div className="text-6xl mb-4">✓</div>
-            <h2 className="text-2xl font-bold text-gray-900 mb-3">Toutes les lignes ont un code déchet valide</h2>
-            <p className="text-gray-600 mb-6">Vous pouvez passer à l'export.</p>
+            <h2 className="text-2xl font-bold text-gray-900 mb-3">Aucune ligne à contrôler</h2>
+            <p className="text-gray-600 mb-6">Importez un fichier pour commencer.</p>
             <Link 
-              href="/export" 
+              href="/import" 
               className="inline-block rounded-lg bg-red-600 px-6 py-3 text-sm font-medium text-white hover:bg-red-700 transition shadow-md hover:shadow-lg"
             >
-              Aller à l'Export →
+              ← Retour à l'Import
             </Link>
           </div>
         </section>
@@ -183,37 +239,108 @@ export default function ControlePage() {
 
       <section className="mx-auto max-w-[90vw] px-4 py-10">
         <div className="mb-6">
-          <h1 className="text-3xl font-bold mb-2 text-gray-900">Contrôle des lignes sans code déchet</h1>
+          <h1 className="text-3xl font-bold mb-2 text-gray-900">Contrôle des lignes</h1>
           <p className="text-gray-600">Corrigez les codes déchets manquants ou utilisez les suggestions automatiques.</p>
         </div>
 
-        {/* Stats */}
-        <div className="rounded-xl border-2 border-red-200 bg-red-50 p-6 mb-6 animate-fade-in">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="h-12 w-12 rounded-full bg-red-600 flex items-center justify-center text-white font-bold text-lg">
-                {controle.length}
-              </div>
-              <div>
-                <h3 className="text-lg font-semibold text-red-900">Lignes à corriger</h3>
-                <p className="text-sm text-red-700">Code déchet manquant ou invalide</p>
-              </div>
+        {/* Stats Pills */}
+        <div className="flex items-center justify-between mb-6 animate-fade-in">
+          <div className="flex gap-3 items-center">
+            {/* Pill 1 - Avec code */}
+            <div className="rounded-full border-2 border-green-200 bg-green-50 px-5 py-2 flex items-center gap-2 hover:scale-105 transition-transform shadow-sm">
+              <span className="text-xs font-medium text-green-700 uppercase tracking-wide">Avec code</span>
+              <span className="text-lg font-bold text-green-900">{lignesAvecCode}</span>
             </div>
-            <div className="flex gap-3">
-              <Link 
-                href="/import" 
-                className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition shadow-sm"
-              >
-                ← Retour à l'Import
-              </Link>
+            
+            {/* Pill 2 - Sans code */}
+            <div className="rounded-full border-2 border-red-200 bg-red-50 px-5 py-2 flex items-center gap-2 hover:scale-105 transition-transform shadow-sm">
+              <span className="text-xs font-medium text-red-700 uppercase tracking-wide">Sans code</span>
+              <span className="text-lg font-bold text-red-900">{lignesSansCode}</span>
             </div>
+            
+            {/* Pill 3 - Total */}
+            <div className="rounded-full border-2 border-blue-200 bg-blue-50 px-5 py-2 flex items-center gap-2 hover:scale-105 transition-transform shadow-sm">
+              <span className="text-xs font-medium text-blue-700 uppercase tracking-wide">Total</span>
+              <span className="text-lg font-bold text-blue-900">{totalLignes}</span>
+            </div>
+
+            {/* Bouton Exporter */}
+            <button
+              onClick={() => setShowConfirmExport(true)}
+              disabled={lignesAvecCode === 0}
+              className="rounded-lg bg-red-600 px-6 py-2 text-sm font-medium text-white hover:bg-red-700 transition shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed ml-4"
+            >
+              Exporter les lignes avec codes →
+            </button>
+          </div>
+          
+          <div className="flex gap-3">
+            <Link 
+              href="/import" 
+              className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition shadow-sm"
+            >
+              ← Retour à l'Import
+            </Link>
           </div>
         </div>
 
         {/* Tableau de contrôle */}
-        <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-          <ControlTable rows={controle} onValidate={onValidateCorrections} />
-        </div>
+        {controle.length > 0 && (
+          <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+            <ControlTable rows={controle} onValidate={onValidateCorrections} onRowsChange={handleRowsChange} />
+          </div>
+        )}
+
+        {/* Tableau des lignes validées */}
+        {registre.length > 0 && (
+          <div className="rounded-xl border-2 border-green-200 bg-white p-6 shadow-sm mt-6">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="h-10 w-10 rounded-full bg-green-600 flex items-center justify-center text-white font-bold">
+                {registre.length}
+              </div>
+              <div>
+                <h3 className="text-lg font-semibold text-green-900">Lignes avec code déchet validé</h3>
+                <p className="text-sm text-green-700">Ces lignes sont prêtes pour l'export</p>
+              </div>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="table w-full">
+                <thead className="bg-green-50">
+                  <tr className="border-b-2 border-green-200">
+                    <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
+                    <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Dénomination</th>
+                    <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase">Quantité</th>
+                    <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase">Unité</th>
+                    <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase">Code déchet</th>
+                    <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase">Danger</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-green-200">
+                  {registre.map((r, i) => (
+                    <tr key={r.__id ?? `registre-${i}`} className="bg-white hover:bg-green-50 transition">
+                      <td className="px-3 py-2 whitespace-nowrap text-sm">{r.dateExpedition ?? r.Date ?? '-'}</td>
+                      <td className="px-3 py-2 text-sm">{r.denominationUsuelle ?? r['Libellé Ressource'] ?? '-'}</td>
+                      <td className="px-3 py-2 text-center text-sm">{r.quantite ?? r.Quantité ?? '-'}</td>
+                      <td className="px-3 py-2 text-center text-sm">{r.codeUnite ?? r.Unité ?? '-'}</td>
+                      <td className="px-3 py-2 text-center">
+                        <span className="px-2 py-1 bg-green-100 text-green-800 rounded font-mono text-sm">
+                          {r.codeDechet}{r.danger === true ? '*' : ''}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2 text-center">
+                        {r.danger === true ? (
+                          <span className="text-red-600 font-semibold">⚠️</span>
+                        ) : (
+                          <span className="text-gray-400">-</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
 
         {/* Actions footer */}
         {controle.length > 0 && (
@@ -243,6 +370,16 @@ export default function ControlePage() {
         message={modalState.message}
         fixed={modalState.fixed}
         remaining={modalState.remaining}
+      />
+
+      {/* Modal de confirmation d'export */}
+      <ConfirmExportModal
+        isOpen={showConfirmExport}
+        onClose={() => setShowConfirmExport(false)}
+        onConfirm={handleConfirmExport}
+        withCode={lignesAvecCode}
+        withoutCode={lignesSansCode}
+        total={totalLignes}
       />
     </main>
   );

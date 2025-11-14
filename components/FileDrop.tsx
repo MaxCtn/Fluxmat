@@ -1,17 +1,31 @@
 'use client';
-import { useState, useRef } from 'react';
+import { useState, useRef, useId } from 'react';
 
 interface FileDropProps {
   onFile: (f: File) => void;
   existingFileName?: string;
+  onRemove?: () => void;
 }
 
-export default function FileDrop({ onFile, existingFileName }: FileDropProps) {
+export default function FileDrop({ onFile, existingFileName, onRemove }: FileDropProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [fileSelected, setFileSelected] = useState(false);
   const [showReplaceConfirm, setShowReplaceConfirm] = useState(false);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const inputId = useId();
+
+  function handleRemove(e: React.MouseEvent) {
+    e.stopPropagation();
+    if (onRemove) {
+      onRemove();
+      setFileSelected(false);
+      // Réinitialiser l'input pour permettre de sélectionner le même fichier
+      if (inputRef.current) {
+        inputRef.current.value = '';
+      }
+    }
+  }
 
   function handleFile(file: File) {
     if (existingFileName && fileSelected && file.name !== existingFileName) {
@@ -61,6 +75,8 @@ export default function FileDrop({ onFile, existingFileName }: FileDropProps) {
         onClick={() => inputRef.current?.click()}
       >
         <input
+          id={inputId}
+          name={`${inputId}-file`}
           ref={inputRef}
           type="file"
           accept=".xlsx,.xls"
@@ -72,14 +88,24 @@ export default function FileDrop({ onFile, existingFileName }: FileDropProps) {
         />
         
         {fileSelected && !isDragging ? (
-          <div className="flex items-center gap-3 text-green-600">
-            <svg className="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            <div>
-              <p className="font-semibold">Fichier pris en compte</p>
-              <p className="text-sm text-gray-600">{existingFileName}</p>
+          <div className="flex flex-col items-center gap-4 w-full">
+            <div className="flex items-center gap-3 text-green-600">
+              <svg className="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <div>
+                <p className="font-semibold">Fichier pris en compte</p>
+                <p className="text-sm text-gray-600">{existingFileName}</p>
+              </div>
             </div>
+            {onRemove && (
+              <button
+                onClick={handleRemove}
+                className="rounded-lg border-2 border-red-300 bg-red-50 px-6 py-2 text-sm font-medium text-red-700 hover:bg-red-100 hover:border-red-400 transition shadow-sm hover:shadow-md"
+              >
+                ✕ Retirer le fichier
+              </button>
+            )}
           </div>
         ) : (
           <>

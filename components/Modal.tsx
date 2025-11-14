@@ -124,3 +124,76 @@ export function AlertModal({ isOpen, onClose, message, fixed, remaining }: Alert
   );
 }
 
+interface ConfirmExportModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  onConfirm: () => void;
+  withCode: number;
+  withoutCode: number;
+  total: number;
+}
+
+export function ConfirmExportModal({ isOpen, onClose, onConfirm, withCode, withoutCode, total }: ConfirmExportModalProps) {
+  return (
+    <Modal isOpen={isOpen} onClose={onClose} showCloseButton={true}>
+      <div className="flex flex-col gap-4">
+        <div className="flex items-start gap-3">
+          <svg className="w-8 h-8 text-green-400 flex-shrink-0 mt-1" fill="currentColor" viewBox="0 0 20 20">
+            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+          </svg>
+          <div className="flex-1">
+            <h3 className="text-xl font-bold text-white mb-2">Prêt à exporter</h3>
+            <p className="text-base text-gray-300 leading-relaxed">
+              {withoutCode > 0 
+                ? `Vous allez exporter ${withCode} ligne${withCode > 1 ? 's' : ''} avec code. ${withoutCode} ligne${withoutCode > 1 ? 's restent' : ' reste'} sans code.`
+                : `Toutes les lignes (${withCode}) ont un code déchet valide.`
+              }
+            </p>
+          </div>
+        </div>
+        
+        <div className="mt-2 bg-white/5 rounded-lg p-5 border border-white/10">
+          <div className="space-y-3 text-sm">
+            <div className="flex justify-between items-center">
+              <span className="text-gray-300 flex items-center gap-2">
+                <span className="w-3 h-3 rounded-full bg-green-500"></span>
+                Lignes avec code :
+              </span>
+              <span className="text-green-400 font-bold text-lg">{withCode}</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-gray-300 flex items-center gap-2">
+                <span className="w-3 h-3 rounded-full bg-red-500"></span>
+                Lignes sans code :
+              </span>
+              <span className="text-red-400 font-bold text-lg">{withoutCode}</span>
+            </div>
+            <div className="pt-3 border-t border-white/10 flex justify-between items-center">
+              <span className="text-gray-200 font-medium flex items-center gap-2">
+                <span className="w-3 h-3 rounded-full bg-blue-500"></span>
+                Total :
+              </span>
+              <span className="text-blue-400 font-bold text-lg">{total}</span>
+            </div>
+          </div>
+        </div>
+        
+        <div className="flex gap-3 mt-6">
+          <button
+            onClick={onClose}
+            className="flex-1 px-6 py-3 bg-white/10 hover:bg-white/20 text-white font-medium rounded-lg transition-colors border border-white/20"
+          >
+            Annuler
+          </button>
+          <button
+            onClick={onConfirm}
+            className="flex-1 px-6 py-3 bg-red-600 hover:bg-red-700 text-white font-medium rounded-lg transition-colors shadow-lg hover:shadow-xl"
+          >
+            Exporter →
+          </button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+

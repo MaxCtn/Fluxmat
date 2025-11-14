@@ -1,11 +1,14 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { isWaste, extractCedCode, suggestCodeDechet, isDangerousCode, parseCodeDechetWithDanger } from './wasteUtils';
+import { classifyWaste } from './wasteUtils';
+import { passesFilter, ParsedCsvRow } from './filters';
+import { isCamionLike, detectTruckType } from './transportUtils';
 
 export type Depense = Record<string, any>;
 export type RegistreRow = {
   dateExpedition: string; quantite: number; codeUnite: "T";
   denominationUsuelle: string; codeDechet?: string;
   danger?: boolean; // Déchet dangereux ou non
+  typeCamion?: string | null;
   etablissement?: string; // Code Entité → Etablissement
   agence?: string; // Libellé Entité → Agence
   chantier?: string; // Libellé Chantier → chantier
@@ -27,6 +30,19 @@ function normalizeKey(s: string): string {
 }
 function buildKeyIndex(obj: Record<string, any>) { const idx: Record<string,string>={}; for (const k of Object.keys(obj)) idx[normalizeKey(k)]=k; return idx; }
 function get(obj: Record<string, any>, keys: string[]): any { const idx=buildKeyIndex(obj); for (const k of keys){ const nk=normalizeKey(k); if (idx[nk]!==undefined) return obj[idx[nk]]; } return undefined; }
+
+type TruckInfo = {
+  libelle: string;
+  type: string | null;
+};
+
+type TruckMap = Record<string, TruckInfo[]>;
+
+function makeContextKey(dateRaw: any, chantier?: string): string {
+  const d = toFrDate(dateRaw);
+  const c = (chantier ?? "").trim();
+  return `${d}#${c}`;
+}
 
 export function extractCed(label: string | undefined): string | undefined {
   if (!label) return;
@@ -126,134 +142,65 @@ function getExutoire(row: any): string {
   return get(row, ["Libellé Fournisseur", "Libelle Fournisseur", "libelle_fournisseur", "Fournisseur", "exutoire"]) || "";
 }
 
-// Filtres selon v_depenses_filtrees (règles Power Query exactes)
-function passesFilter(row: any): boolean {
-  // 1. ORIGINE - Chercher avec plusieurs variations
-  const origine = get(row, [
-    "Origine", 
-    "origine",
-    "Libellé Origine",
-    "Libelle Origine"
-  ]);
-  
-  if (origine && String(origine).trim() === 'Pointage personnel') {
-    return false;
-  }
-
-  // 2. CHAPITRE COMPTABLE - Chercher avec plusieurs variations
-  const chapitre = get(row, [
-    "Libellé Chapitre Comptable", 
-    "Libelle Chapitre Comptable",
-    "Chapitre Comptable",
-    "chapitre comptable",
-    "Libellé Chapitre",
-    "Libelle Chapitre"
-  ]);
-  
-  if (!chapitre) {
-    return false;
-  }
-  
-  const chapitreStr = String(chapitre).trim();
-  const chapitresValides = [
-    'MATERIAUX & CONSOMMABLES', 
-    'MATERIEL', 
-    'S/T & PRESTATAIRES', 
-    'S/T PRODUITS NON SOUMIS A FGX'
-  ];
-  
-  if (!chapitresValides.includes(chapitreStr)) {
-    return false;
-  }
-
-  // 3. SOUS-CHAPITRE COMPTABLE - Chercher avec plusieurs variations
-  const sousChapitre = get(row, [
-    "Libellé Sous-chapitre Comptable", 
-    "Libelle Sous-chapitre Comptable",
-    "Sous-chapitre Comptable",
-    "sous-chapitre comptable",
-    "Libellé Sous-chapitre",
-    "Libelle Sous-chapitre"
-  ]) || '';
-  
-  const sousChapitreStr = String(sousChapitre).trim();
-  const sousChapitresExclus = ['ACIERS', 'CONSOMMABLES', 'FRAIS ANNEXES MATERIEL'];
-  
-  if (sousChapitreStr && sousChapitresExclus.includes(sousChapitreStr)) {
-    return false;
-  }
-
-  // 4. RUBRIQUE COMPTABLE - Chercher avec plusieurs variations
-  const rubrique = get(row, [
-    "Libellé Rubrique Comptable", 
-    "Libelle Rubrique Comptable",
-    "Rubrique Comptable",
-    "rubrique comptable",
-    "Libellé Rubrique",
-    "Libelle Rubrique"
-  ]);
-  
-  if (!rubrique) {
-    return false;
-  }
-  
-  const rubriqueStr = String(rubrique).trim();
-  const rubriquesValides = [
-    'Agregats', 
-    'AMENAGT ESPACES VERT', 
-    'Autres prestations', 
-    'Balisage', 
-    'Enrobes a froid', 
-    'Fraisat',
-    'Loc camions', 
-    'Loc int. camions', 
-    'Loc int. mat transport', 
-    'Loc materiel de transport', 
-    'Loc materiel divers',
-    'Materiaux divers', 
-    'Materiaux recycles', 
-    'Mise decharge materiaux divers', 
-    'Prestation environnement',
-    'Produits de voirie', 
-    'SABLE', 
-    'Sous traitance tiers', 
-    'STPD tiers', 
-    'Traitement dechets inertes'
-  ];
-  
-  if (!rubriquesValides.includes(rubriqueStr)) {
-    return false;
-  }
-
-  return true;
-}
-
 let rowId=0;
 export function transform(rows: Depense[]): TransformResult & { allRows?: Depense[] } {
   const registre: RegistreRow[]=[]; 
   const controle: (Depense & { suggestionCodeDechet?: string; __id?: string })[]=[];
+  const trucksByContext: TruckMap = {};
 
   console.log(`[TRANSFORM] Début transformation de ${rows.length} lignes`);
+
+  // Première passe : détecter les camions / véhicules de transport
+  for (const row of rows) {
+    const dateRaw = get(row, ["Date", "Date Mouvement", "Date pièce", "Date piece"]);
+    const chantier = get(row, ["Chantier", "Libellé Chantier", "Libelle Chantier", "Code Chantier"]);
+    const libelleRessource = get(row, ["Libellé Ressource","Libelle Ressource","Libellé Article","Libelle Article"]);
+    const rubrique = get(row, ["Libellé Rubrique Comptable","Libelle Rubrique Comptable","Rubrique Comptable","rubrique comptable","Rubrique"]);
+
+    if (!libelleRessource && !rubrique) continue;
+
+    if (isCamionLike(libelleRessource as string | undefined, rubrique as string | undefined)) {
+      const key = makeContextKey(dateRaw, chantier as string | undefined);
+      const type = detectTruckType(libelleRessource as string | undefined);
+      if (!trucksByContext[key]) trucksByContext[key] = [];
+      trucksByContext[key].push({
+        libelle: String(libelleRessource ?? rubrique ?? ""),
+        type
+      });
+    }
+  }
 
   for (const row of rows) {
     // Extraire le libellé ressource d'abord
     const rawLabel = get(row, ["Libellé Ressource","Libelle Ressource","Libellé Article","Libelle Article"]);
     const label = rawLabel ?? "";
     
-    // 1. FILTRE PRINCIPAL : Est-ce que le libellé décrit un déchet physique ?
-    if (!isWaste(label)) {
-      continue; // Ce n'est pas un déchet, on ignore
-    }
-    
-    // 2. FILTRE SECONDAIRE : Est-ce qu'on garde ce déchet dans notre périmètre comptable ?
-    // On applique passesFilter() APRÈS isWaste() pour ne pas perdre des déchets valides
-    // juste parce que la rubrique comptable n'est pas dans la whitelist
-    if (!passesFilter(row)) {
+    // 1. FILTRE COMPTABLE : garder uniquement les lignes autorisées
+    if (!passesFilter(row as ParsedCsvRow)) {
       continue;
     }
-    const date = get(row, ["Date"]) ?? "";
+
+    // 2. Classification déchet (code CED, danger, suggestions, exclusions…)
+    const classification = classifyWaste(label);
+    if (!classification.isWaste) {
+      continue;
+    }
+    const date = get(row, ["Date", "Date Mouvement", "Date pièce", "Date piece"]) ?? "";
     const unite = get(row, ["Unité","Unite"]);
     const quantite = Number(get(row, ["Quantité","Quantite"]) ?? 0);
+    const chantierContext = get(row, ["Chantier", "Libellé Chantier", "Libelle Chantier", "Code Chantier"]);
+    const contextKey = makeContextKey(date, chantierContext as string | undefined);
+    const trucks = trucksByContext[contextKey] ?? [];
+    let selectedTruck: TruckInfo | undefined;
+    if (trucks.length === 1) {
+      selectedTruck = trucks[0];
+    } else if (trucks.length > 1) {
+      const preferredOrder = ["8x4", "6x4", "3,5", "3.5", "3t5"];
+      selectedTruck =
+        trucks.find(t => t.type && preferredOrder.some(p => t.type!.includes(p))) ??
+        trucks[0];
+    }
+    const typeCamion = selectedTruck?.type ?? selectedTruck?.libelle ?? undefined;
     
     // Nouveau mapping des colonnes
     const etablissement = getEtablissement(row); // Code Entité → Etablissement
@@ -265,32 +212,10 @@ export function transform(rows: Depense[]): TransformResult & { allRows?: Depens
     const entite = agence; // Libellé Entité
     const fournisseur = exutoire; // Libellé Fournisseur
 
-    // Extraire le code CED explicite depuis le libellé
-    // D'abord, vérifier si le label contient un astérisque (indicateur de danger)
-    const labelHasAsterisk = isDangerousCode(label);
-    
-    const { codeCED: ced } = extractCedCode(label);
-    // Convertir null en undefined pour compatibilité TypeScript
-    const codeDechet = ced || undefined;
-    const hasExplicitCode = Boolean(codeDechet);
-    
-    // Suggérer un code déchet depuis les mots-clés si pas de code explicite
-    let suggestionCodeDechet: string | undefined;
-    let dangerValue: boolean | undefined = undefined;
-    if (!codeDechet) {
-      // Déterminer la source depuis les données (peut être dans une colonne spécifique)
-      // Pour l'instant, on ne passe pas de source, mais on pourrait l'extraire depuis row
-      const suggestion = suggestCodeDechet(label);
-      suggestionCodeDechet = suggestion?.codeCED || undefined;
-      // Priorité : astérisque dans le label > suggestion de la table
-      dangerValue = labelHasAsterisk || suggestion?.danger;
-    } else {
-      // Si on a un code explicite, vérifier d'abord l'astérisque dans le label
-      // Puis chercher aussi le danger depuis la table de correspondance
-      const suggestion = suggestCodeDechet(label);
-      // Priorité : astérisque dans le label > suggestion de la table
-      dangerValue = labelHasAsterisk || suggestion?.danger;
-    }
+    const hasExplicitCode = classification.hasExplicitCode && Boolean(classification.codeCED);
+    const codeDechet = hasExplicitCode ? classification.codeCED : undefined;
+    const suggestionCodeDechet = classification.suggestionCodeDechet;
+    const dangerValue = classification.danger;
     
     const base: RegistreRow = {
       dateExpedition: toFrDate(date),
@@ -304,6 +229,7 @@ export function transform(rows: Depense[]): TransformResult & { allRows?: Depens
       agence: agence || undefined,
       chantier: chantier || undefined,
       exutoire: exutoire || undefined,
+      typeCamion: typeCamion ?? null,
       // Anciens champs conservés pour compatibilité
       "producteur.raisonSociale": entite,
       "producteur.adresse.libelle": chantier,
@@ -323,6 +249,7 @@ export function transform(rows: Depense[]): TransformResult & { allRows?: Depens
       raw["quantite"]=base.quantite; 
       raw["codeUnite"]=base.codeUnite;
       raw["danger"]=dangerValue; // Ajouter le champ danger pour suggestion
+      raw["typeCamion"]=typeCamion ?? null;
       // Nouveaux champs avec mapping
       raw["etablissement"]=base.etablissement;
       raw["agence"]=base.agence;
@@ -353,6 +280,7 @@ export function transform(rows: Depense[]): TransformResult & { allRows?: Depens
     "producteur.raisonSociale": raw["producteur.raisonSociale"] || "",
     "producteur.adresse.libelle": raw["producteur.adresse.libelle"] || "",
     "destinataire.raisonSociale": raw["destinataire.raisonSociale"],
+    typeCamion: raw["typeCamion"] ?? null,
     __id: raw.__id || `c${rowId++}`
   }));
   

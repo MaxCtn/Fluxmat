@@ -20,17 +20,24 @@ function cleanDataForStorage(rows: any[]): any[] {
     if (row.Date !== undefined) cleaned.Date = row.Date;
     if (row.denominationUsuelle !== undefined) cleaned.denominationUsuelle = row.denominationUsuelle;
     if (row['Libellé Ressource'] !== undefined) cleaned['Libellé Ressource'] = row['Libellé Ressource'];
+    if (row['Libelle Ressource'] !== undefined) cleaned['Libelle Ressource'] = row['Libelle Ressource'];
     if (row.quantite !== undefined) cleaned.quantite = row.quantite;
     if (row.Quantité !== undefined) cleaned.Quantité = row.Quantité;
     if (row.codeUnite !== undefined) cleaned.codeUnite = row.codeUnite;
     if (row.Unité !== undefined) cleaned.Unité = row.Unité;
     if (row.codeDechet !== undefined) cleaned.codeDechet = row.codeDechet;
     if (row.danger !== undefined) cleaned.danger = row.danger;
+    if (row.typeCamion !== undefined) cleaned.typeCamion = row.typeCamion;
     if (row['producteur.raisonSociale'] !== undefined) cleaned['producteur.raisonSociale'] = row['producteur.raisonSociale'];
     if (row['Libellé Entité'] !== undefined) cleaned['Libellé Entité'] = row['Libellé Entité'];
     if (row['producteur.adresse.libelle'] !== undefined) cleaned['producteur.adresse.libelle'] = row['producteur.adresse.libelle'];
     if (row['Libellé Chantier'] !== undefined) cleaned['Libellé Chantier'] = row['Libellé Chantier'];
     if (row['destinataire.raisonSociale'] !== undefined) cleaned['destinataire.raisonSociale'] = row['destinataire.raisonSociale'];
+    if (row['Origine'] !== undefined) cleaned['Origine'] = row['Origine'];
+    if (row['Libellé Origine'] !== undefined) cleaned['Libellé Origine'] = row['Libellé Origine'];
+    if (row['Libelle Origine'] !== undefined) cleaned['Libelle Origine'] = row['Libelle Origine'];
+    if (row['Chantier'] !== undefined) cleaned['Chantier'] = row['Chantier'];
+    if (row['Code Chantier'] !== undefined) cleaned['Code Chantier'] = row['Code Chantier'];
     
     return cleaned;
   });
@@ -42,6 +49,8 @@ function saveToSessionStorage(key: string, data: any): boolean {
     const cleanedData = {
       registre: data.registre ? cleanDataForStorage(data.registre) : [],
       controle: data.controle ? cleanDataForStorage(data.controle) : [],
+      allWasteRows: data.allWasteRows ? cleanDataForStorage(data.allWasteRows) : [],
+      allRows: data.allRows ? cleanDataForStorage(data.allRows) : [],
       fileName: data.fileName
     };
     const jsonString = JSON.stringify(cleanedData);
@@ -101,10 +110,24 @@ export default function ImportPage() {
       registre: newRegistre,
       controle: newControle,
       allWasteRows: newAllWasteRows,
+      allRows: newAllRows,
       fileName: file.name
     });
     
     setLoading(false);
+  }
+
+  function handleRemoveFile() {
+    // Réinitialiser tous les états
+    setFileName(undefined);
+    setRegistre([]);
+    setControle([]);
+    setAllWasteRows([]);
+    setAllRows([]);
+    setLoading(false);
+    
+    // Nettoyer le sessionStorage
+    sessionStorage.removeItem('fluxmat_data');
   }
 
   function navigateToControle() {
@@ -113,6 +136,7 @@ export default function ImportPage() {
       registre,
       controle,
       allWasteRows,
+      allRows,
       fileName
     });
     
@@ -152,7 +176,7 @@ export default function ImportPage() {
         
         {/* Zone de drop améliorée */}
         <div className="rounded-xl border border-gray-200 bg-white p-6 mb-8 shadow-sm">
-          <FileDrop onFile={onUpload} existingFileName={fileName} />
+          <FileDrop onFile={onUpload} existingFileName={fileName} onRemove={handleRemoveFile} />
           {loading && (
             <div className="mt-4 flex items-center gap-3 text-blue-600 animate-pulse">
               <svg className="animate-spin h-5 w-5" fill="none" viewBox="0 0 24 24">
